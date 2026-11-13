@@ -1,0 +1,658 @@
+<title>Mac Computer Use Spec</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a single reading column of numbered spec sections, with wide figures (architecture, charts, tables) breaking out to a wider measure. */
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --sunk: #eceef2;
+  --fg: #16181d;
+  --muted: #5b6270;
+  --line: #d9dde4;
+  --accent: #2f5bd3;
+  --accent-soft: #e3e9fb;
+  --good: #1f7a4d;
+  --warn: #a35a00;
+  --bad: #b3261e;
+  --bar-a: #c9ced8;
+  --bar-b: #8f97a6;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111318; --surface: #181b22; --sunk: #1f232c; --fg: #e8eaef; --muted: #9aa1ae;
+    --line: #2c313c; --accent: #7d9cff; --accent-soft: #1f2a4a; --good: #5cc98f; --warn: #e6a55a; --bad: #f08a80;
+    --bar-a: #3a404c; --bar-b: #6b7383; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111318; --surface: #181b22; --sunk: #1f232c; --fg: #e8eaef; --muted: #9aa1ae;
+  --line: #2c313c; --accent: #7d9cff; --accent-soft: #1f2a4a; --good: #5cc98f; --warn: #e6a55a; --bad: #f08a80;
+  --bar-a: #3a404c; --bar-b: #6b7383; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 48px 96px;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 72px; }
+.col { max-width: 700px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.01em; }
+h3 { font-size: 1.1rem; font-weight: 700; }
+p { margin: 0; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.eyebrow { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+section { display: grid; gap: 20px; }
+.sec-head { display: grid; gap: 8px; }
+.sec-num { font-family: var(--font-mono); font-size: 0.8rem; color: var(--accent); }
+.lede { font-size: 1.2rem; color: var(--muted); max-width: 640px; }
+
+/* Hero */
+.hero { display: grid; gap: 24px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; font-family: var(--font-mono); font-size: 0.8rem; color: var(--muted); }
+.meta b { color: var(--fg); font-weight: 500; }
+.thesis { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.thesis div { background: var(--surface); padding: 18px 20px; display: grid; gap: 6px; min-width: 0; }
+.thesis .k { font-family: var(--font-display); font-size: 1.9rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.thesis .v { color: var(--muted); font-size: 0.92rem; line-height: 1.45; }
+
+/* Comparison table */
+.tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { text-align: left; vertical-align: top; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; background: var(--sunk); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.us { background: var(--accent-soft); }
+th.us { color: var(--accent); }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.good { color: var(--good); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); } .pill.acc { color: var(--accent); }
+
+/* Principles */
+.bets { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.bet { border-top: 2px solid var(--fg); padding-top: 14px; display: grid; gap: 8px; align-content: start; }
+.bet p { color: var(--muted); font-size: 0.95rem; }
+.bet .evidence { font-family: var(--font-mono); font-size: 0.76rem; color: var(--fg); background: var(--sunk); padding: 8px 10px; border-radius: 6px; line-height: 1.5; }
+
+/* Architecture */
+.figure { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; overflow-x: auto; }
+.figure svg { display: block; min-width: 760px; width: 100%; height: auto; }
+.figure .cap { font-size: 0.85rem; color: var(--muted); margin-top: 12px; max-width: 760px; }
+svg text { font-family: var(--font-body); fill: var(--fg); }
+svg .m { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+svg .t { font-size: 14px; font-weight: 600; }
+svg .s { font-size: 12px; fill: var(--muted); }
+svg .box { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+svg .box-acc { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.4; }
+svg .box-sunk { fill: var(--sunk); stroke: var(--line); stroke-width: 1.2; }
+svg .ln { stroke: var(--muted); stroke-width: 1.3; fill: none; }
+svg .ln-acc { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+svg .arrow { fill: var(--muted); }
+svg .arrow-acc { fill: var(--accent); }
+svg .acc { fill: var(--accent); }
+
+/* Components list */
+.comps { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.comp { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.comp .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.comp p { color: var(--muted); font-size: 0.93rem; }
+.comp ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.9rem; display: grid; gap: 4px; }
+
+/* Code */
+pre { margin: 0; background: var(--sunk); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.65; }
+pre .c { color: var(--muted); }
+pre .a { color: var(--accent); }
+pre .g { color: var(--good); }
+pre .r { color: var(--bad); }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.two > div { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); }
+
+/* Tools */
+.tools { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.tool { display: grid; grid-template-columns: minmax(180px, 260px) 1fr; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.tool:last-child { border-bottom: 0; }
+.tool .sig { font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent); word-break: break-word; }
+.tool p { color: var(--muted); font-size: 0.93rem; min-width: 0; }
+.tool .tag { margin-left: 6px; }
+@media (max-width: 560px) { .tool { grid-template-columns: 1fr; gap: 6px; } }
+
+/* Charts */
+.chart { display: grid; gap: 14px; }
+.bar-row { display: grid; grid-template-columns: 170px 1fr 120px; gap: 12px; align-items: center; font-size: 0.9rem; }
+.bar-track { height: 18px; background: var(--sunk); border-radius: 4px; position: relative; }
+.bar { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--bar-b); }
+.bar.target { background: repeating-linear-gradient(45deg, var(--accent) 0 6px, var(--accent-soft) 6px 10px); border: 1px solid var(--accent); }
+.bar-row .num { font-family: var(--font-mono); font-size: 0.8rem; font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
+.bar-row .name { min-width: 0; }
+.bar-row.us .name, .bar-row.us .num { color: var(--accent); font-weight: 600; }
+.axis { display: grid; grid-template-columns: 170px 1fr 120px; gap: 12px; }
+.axis .ticks { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); }
+@media (max-width: 560px) { .bar-row, .axis { grid-template-columns: 96px 1fr 72px; font-size: 0.8rem; } }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+@media (max-width: 480px) { .charts { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 16px; min-width: 0; }
+.panel .note { font-size: 0.82rem; color: var(--muted); }
+
+/* Budgets */
+.budgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.budget { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 4px; align-content: start; }
+.budget .big { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.budget .what { font-weight: 600; font-size: 0.93rem; }
+.budget .vs { font-family: var(--font-mono); font-size: 0.75rem; color: var(--muted); line-height: 1.5; }
+
+/* Tiers */
+.tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.tier { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 12px; align-content: start; }
+.tier ol, .tier ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 0.93rem; }
+.tier .pass { font-size: 0.85rem; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 10px; }
+.tier .pass b { color: var(--fg); }
+
+/* Plan */
+.plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.day { display: grid; gap: 10px; align-content: start; padding: 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.day.build { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.day .when { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.day ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: 0.93rem; }
+.day li { display: grid; grid-template-columns: 18px 1fr; gap: 8px; }
+.day li::before { content: ""; width: 12px; height: 12px; margin-top: 6px; border: 1.5px solid var(--muted); border-radius: 3px; }
+.day li.done::before { background: var(--good); border-color: var(--good); }
+.day li.done { color: var(--muted); }
+
+/* Risks */
+.risks { display: grid; gap: 10px; }
+.risk { display: grid; grid-template-columns: 92px 1fr; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.risk:last-child { border-bottom: 0; }
+.risk p { color: var(--muted); font-size: 0.93rem; }
+.risk h3 { font-size: 1rem; margin-bottom: 4px; }
+@media (max-width: 520px) { .risk { grid-template-columns: 1fr; gap: 6px; } }
+
+.refs { display: grid; gap: 6px; font-size: 0.88rem; }
+.refs li { color: var(--muted); }
+.refs ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 20px; }
+@media (prefers-reduced-motion: no-preference) {
+  .bar { transform-origin: left; animation: grow 700ms cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes grow { from { transform: scaleX(0.02); } to { transform: scaleX(1); } }
+}
+</style>
+<style>
+.dt { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; white-space: nowrap; vertical-align: 1px; }
+.tagrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.callout { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 8px 8px 0; display: grid; gap: 6px; max-width: 760px; }
+.callout p { font-size: 0.95rem; }
+.small { font-size: 0.86rem; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 0.84rem; }
+td.best { color: var(--good); font-weight: 600; }
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="eyebrow">Spec v1 · data checked 13 Nov 2026 · working name to be decided</div>
+  <h1>Computer use that feels instant, for any agent on your Mac</h1>
+  <p class="lede">An MCP server and CLI that any coding agent can call to see and drive Mac apps in the background. It aims to beat every current tool on the one test that matters: getting the job done while you keep working, in the fewest model calls, cheap enough to run on Haiku.</p>
+  <div class="meta">
+    <span>Updated <b>Fri 13 Nov 2026</b></span>
+    <span>Build day <b>Sun 15 Nov, Side Quest Sunday</b></span>
+    <span>Platform <b>macOS 15+, tested on 27.2.1</b></span>
+    <span>Stack <b>Swift daemon · MCP + CLI</b></span>
+    <span>License <b>open source (MIT planned)</b></span>
+  </div>
+  <div class="thesis">
+    <div><span class="k">≥ 95%</span><span class="v">of Cua Driver Bench v2 tasks passed in the background while a user types. Best today: Aside at 95%, Cua at 45%, the Codex plugin at 25%.</span></div>
+    <div><span class="k">≤ 5</span><span class="v">model calls for a typical passing task. Today: Aside 7, Codex 9, Cua 11.</span></div>
+    <div><span class="k">≤ 15 s</span><span class="v">median per passing task. Today: Aside 22 s, Codex 27 s, Cua 35 s.</span></div>
+    <div><span class="k">Haiku</span><span class="v">good enough to use. Haiku 5.5 costs $0.10 per million input tokens, 40× less than Opus 5.5.</span></div>
+  </div>
+</header>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">01 · The bar, November 2026</span>
+    <h2>One shared Mac benchmark exists now, and it measures what we care about</h2>
+  </div>
+  <p class="col">Cua Driver Bench v2 launched on 6 Nov. Every setup gets the same agent, model and limits; only the computer use tool changes. Each task runs twice: once in the foreground, and once in the background while a simulated user keeps typing in front of the target app. A background trial passes only if the task is done and the user was never disturbed. Scale ran it on more tools and models and last updated its results on 12 Nov.</p>
+  <div class="charts">
+    <div class="panel">
+      <div><h3>Background pass rate, user typing</h3><p class="note">Opus 5.5 driving every tool. 5 trials per task. Scale dataset <span class="dt">12 Nov 2026</span></p></div>
+      <div class="chart" role="img" aria-label="Background pass rate with Opus 5.5: Aside 95 percent, cua-driver 45, Codex plugin 25, target 95 or more">
+        <div class="bar-row"><span class="name">Aside Computer Use</span><div class="bar-track"><div class="bar" style="width:95%"></div></div><span class="num">95%</span></div>
+        <div class="bar-row"><span class="name">cua-driver 0.47.10</span><div class="bar-track"><div class="bar" style="width:45%"></div></div><span class="num">45%</span></div>
+        <div class="bar-row"><span class="name">Codex CU plugin</span><div class="bar-track"><div class="bar" style="width:25%"></div></div><span class="num">25%</span></div>
+        <div class="bar-row us"><span class="name">This tool (target)</span><div class="bar-track"><div class="bar target" style="width:95%"></div></div><span class="num">≥ 95%</span></div>
+        <div class="axis"><span></span><div class="ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100%</span></div><span></span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div><h3>Median seconds per passing trial</h3><p class="note">Model calls in brackets. Same Scale dataset <span class="dt">12 Nov 2026</span></p></div>
+      <div class="chart" role="img" aria-label="Median seconds per passing trial: Aside 22 seconds with 7 calls, agent-desktop 26 with 12, Codex 27 with 9, cua-driver 35 with 11, target 15 with 5">
+        <div class="bar-row"><span class="name">cua-driver</span><div class="bar-track"><div class="bar" style="width:87.5%"></div></div><span class="num">35 s (11)</span></div>
+        <div class="bar-row"><span class="name">Codex CU plugin</span><div class="bar-track"><div class="bar" style="width:67.5%"></div></div><span class="num">27 s (9)</span></div>
+        <div class="bar-row"><span class="name">agent-desktop</span><div class="bar-track"><div class="bar" style="width:65%"></div></div><span class="num">26 s (12)</span></div>
+        <div class="bar-row"><span class="name">Aside Computer Use</span><div class="bar-track"><div class="bar" style="width:55%"></div></div><span class="num">22 s (7)</span></div>
+        <div class="bar-row us"><span class="name">This tool (target)</span><div class="bar-track"><div class="bar target" style="width:37.5%"></div></div><span class="num">≤ 15 s (5)</span></div>
+        <div class="axis"><span></span><div class="ticks"><span>0</span><span>10</span><span>20</span><span>30</span><span>40 s</span></div><span></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Model, foreground · background pass %</th><th class="num">Aside 1.26.1111</th><th class="num">cua-driver 0.47.10</th><th class="num">Codex CU 26.930</th><th>Cost of a 90-trial run</th></tr></thead>
+      <tbody>
+        <tr><td><b>Opus 5.5</b></td><td class="num best">100 · 95</td><td class="num">88 · 45</td><td class="num">68 · 25</td><td>Aside $25.67 · Codex $40.18 · Cua $67.81</td></tr>
+        <tr><td><b>Sonnet 5.5</b></td><td class="num best">100 · 93</td><td class="num">86 · 57</td><td class="num">52 · 28</td><td>Aside $16.51</td></tr>
+        <tr><td><b>Haiku 5.5</b></td><td class="num best">92 · 68</td><td class="num">82 · 55</td><td class="num">54 · 48</td><td>Aside $1.21</td></tr>
+        <tr><td><b>GPT-6.1 Terra</b></td><td class="num best">88 · 78</td><td class="num">66 · 55</td><td class="num">42 · 40</td><td>&nbsp;</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout">
+    <p><b>How to read this.</b> Aside is the browser this research ran in, but Scale ran these numbers, not Aside. Cua built the benchmark and grades its own driver. Five trials per task is a small sample. The Codex row is OpenAI's plugin driven by Claude, not Codex in its own app with GPT models. The 1 Nov anecdote of Codex finishing 34 of 35 Mac jobs in its own app came with no method.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">02 · Models are not the bottleneck</span>
+    <h2>Frontier models are good at computer use; the tool layer decides how fast and cheap it is</h2>
+  </div>
+  <p class="col">The older OSWorld-Verified benchmark is saturated: 14 entries beat the 72% human baseline, and its board hasn't changed since 7 Aug. Models are now compared on OSWorld 2.1, where vendors mix partial-credit and strict pass/fail scores, so their numbers rarely line up.</p>
+  <div class="two">
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>OSWorld 2.1, offline set</th><th class="num">Partial</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>Claude Fable 5.2</td><td class="num">89.3%</td><td>Anthropic <span class="dt">9 Nov</span></td></tr>
+          <tr><td>Claude Opus 5.5</td><td class="num">87.2%</td><td>Anthropic <span class="dt">9 Nov</span></td></tr>
+          <tr><td>Gemini 4 Carbon</td><td class="num">81.5%</td><td>Anthropic's table <span class="dt">9 Nov</span></td></tr>
+          <tr><td>GPT-6 Astra</td><td class="num">79.5%</td><td>Anthropic's run <span class="dt">9 Nov</span></td></tr>
+          <tr><td>Best strict pass/fail, official board</td><td class="num">44.4%</td><td>Darwinx w/ Opus 4.8 <span class="dt">15 Oct</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>cua-speedrun, 50 OSWorld tasks</th><th class="num">Score</th><th class="num">Time</th><th class="num">Cost</th></tr></thead>
+        <tbody>
+          <tr><td>Opus 5.5, Claude Code, medium</td><td class="num">91.6%</td><td class="num">47.7 s</td><td class="num">$0.30</td></tr>
+          <tr><td>GPT-6.1 Terra, Codex, medium</td><td class="num">91.6%</td><td class="num">53.3 s</td><td class="num">$0.054</td></tr>
+          <tr><td>Opus 5.5, xhigh</td><td class="num">95.6%</td><td class="num">88.4 s</td><td class="num">$0.53</td></tr>
+          <tr><td>GPT-5.6 Luna, direct API</td><td class="num">81.6%</td><td class="num">161 s</td><td class="num">&nbsp;</td></tr>
+          <tr><td>GPT-5.6 Luna, through Codex</td><td class="num">79.6%</td><td class="num">325 s</td><td class="num">&nbsp;</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <p class="col small">cua-speedrun board read 13 Nov (undated page; paper 30 Sep). The same model took twice as long through one harness as another. GPT-6 Astra's OSWorld 2.0 score appears as 72.6, 73.5, 75.8, 79.5 and 80.9 depending on who ran it.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">03 · Where the time and money go</span>
+    <h2>Round trips and the fixed prompt cost the most; the Mac itself is fast</h2>
+  </div>
+  <p class="col">I measured the Mac side on this machine (M4 Pro, macOS 27.2.1) today. Every local operation takes tens of milliseconds or less. A model round trip takes seconds. The tool wins by needing fewer, smaller model calls, and by never answering before the app has finished updating.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Measured here, 13 Nov 2026</th><th class="num">Median</th><th>Older published figure</th></tr></thead>
+      <tbody>
+        <tr><td>Full Accessibility tree walk, 181 to 609 elements (9 running apps)</td><td class="num">14 to 84 ms</td><td>575 ms for 387 elements <span class="dt">May 2026</span></td></tr>
+        <tr><td>Same walk, attributes read in one batched call per element</td><td class="num">6 to 30 ms</td><td>&nbsp;</td></tr>
+        <tr><td>Reading one attribute</td><td class="num">0.01 ms</td><td>&nbsp;</td></tr>
+        <tr><td>One-window screenshot at 960×540 (ScreenCaptureKit)</td><td class="num">30 ms</td><td>&nbsp;</td></tr>
+        <tr><td>JPEG encode of that screenshot, 56 KB</td><td class="num">1.2 ms</td><td>&nbsp;</td></tr>
+        <tr><td>osascript, cold start</td><td class="num">67 ms</td><td>~80 ms <span class="dt">May 2026</span></td></tr>
+        <tr><td>Compiled AppleScript, in process (overhead only)</td><td class="num">0.007 ms</td><td>~5 ms persistent process <span class="dt">May 2026</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="charts">
+    <div class="panel">
+      <div><h3>Same task, three ways of driving the Mac</h3><p class="note">Gajjar, 432 runs, Opus 5.5 in Claude Code, 8 tasks, macOS 13.6. Median seconds per task <span class="dt">3 Nov 2026</span></p></div>
+      <div class="chart" role="img" aria-label="Median seconds per task: raw accessibility tree 44, screenshots 16, AppleScript 8">
+        <div class="bar-row"><span class="name">Raw AX tree (agent-desktop)</span><div class="bar-track"><div class="bar" style="width:100%"></div></div><span class="num">44 s</span></div>
+        <div class="bar-row"><span class="name">Screenshots</span><div class="bar-track"><div class="bar" style="width:36.4%"></div></div><span class="num">16 s</span></div>
+        <div class="bar-row"><span class="name">AppleScript</span><div class="bar-track"><div class="bar" style="width:18.2%"></div></div><span class="num">8 s</span></div>
+        <div class="axis"><span></span><div class="ticks"><span>0</span><span>11</span><span>22</span><span>33</span><span>44 s</span></div><span></span></div>
+      </div>
+      <p class="note">Cost: $0.23, $0.10 and $0.06. Success: 48/48, 48/48 and 44/48. The raw tree lost because element IDs expired after every change (13 calls vs 7) and a 6,278-token guide rode along on every call.</p>
+    </div>
+    <div class="panel">
+      <div><h3>Compact AX, batching and diffs vs Cua Driver</h3><p class="note">Microsoft HCU paper, OSWorld 1.0, 360 tasks × 3 runs, GPT-5.4 xhigh <span class="dt">30 Oct 2026</span></p></div>
+      <div class="tbl-wrap" style="border:0">
+        <table>
+          <thead><tr><th>&nbsp;</th><th class="num">Cua Driver</th><th class="num">HCU</th><th class="num">Change</th></tr></thead>
+          <tbody>
+            <tr><td>Score</td><td class="num">62.3</td><td class="num">65.6</td><td class="num best">+3.3</td></tr>
+            <tr><td>Steps</td><td class="num">40.7</td><td class="num">28.6</td><td class="num best">−30%</td></tr>
+            <tr><td>Input tokens</td><td class="num">2.18M</td><td class="num">0.94M</td><td class="num best">−57%</td></tr>
+            <tr><td>Time</td><td class="num">501 s</td><td class="num">351 s</td><td class="num best">−30%</td></tr>
+            <tr><td>Cost</td><td class="num">$5.65</td><td class="num">$2.52</td><td class="num best">−55%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">One Obsidian window: 30,526 tokens as OSWorld's accessibility XML, 1,237 in HCU's outline. On macOS HCU was only tested on 28 tasks.</p>
+    </div>
+  </div>
+  <div class="callout">
+    <p><b>The trap to avoid.</b> In cua-speedrun, near-instant screenshots made a fast agent slower: 89.5 s became 99.0 s per task and cost went from $0.53 to $0.91, because screenshots came back 13 to 39 ms after an action, before the app had redrawn <span class="dt">30 Sep</span>. A separate study found 17% of clicks planned in the first second of a page load went stale, against 0.4% on a loaded page <span class="dt">29 Oct</span>.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">04 · The bets</span>
+    <h2>Table stakes we must match, and where we can win</h2>
+  </div>
+  <p class="col">Since October the field has converged. Cua added batching, change summaries and a script runner (0.35, 12 Oct). Microsoft open-sourced HCU (30 Oct). Aside, agent-desktop and Peekaboo all ship compact Accessibility snapshots and background input. Matching that is the entry ticket. The wins are in the last three cards.</p>
+  <div class="bets">
+    <div class="bet"><div class="tagrow"><span class="pill warn">table stakes</span></div><h3>Compact outline, then only the changes</h3><p>Focused window only, short stable IDs, noise dropped. After the first look, send only what changed. Byte-stable output so prompt caching works.</p><div class="evidence">agent-desktop skeleton: 273 vs 3,811 tokens <span class="dt">31 Oct</span><br>Blindsight outline: 322/330 vs 317 for screenshots, ⅓ the tokens <span class="dt">22 Oct</span></div></div>
+    <div class="bet"><div class="tagrow"><span class="pill warn">table stakes</span></div><h3>Batches that stop on failure</h3><p>One call carries several steps and waits, stops at the first failure, and returns one change summary.</p><div class="evidence">HCU: up to 64 actions per call, −30% steps <span class="dt">30 Oct</span><br>Astra batched: 127 s vs 183 s, same score <span class="dt">30 Sep</span></div></div>
+    <div class="bet"><div class="tagrow"><span class="pill warn">table stakes</span></div><h3>The tool picks the route</h3><p>Use the app's scripting dictionary where it has one, then an Accessibility action, then a background pixel click. Keep the guide tiny: script channels raise cost when they come with long instructions.</p><div class="evidence">MacAgentBench: 39% → 74% pass, but $0.98 → $1.35 per task <span class="dt">20 Oct</span><br>beans-picker over Cua: 28 s vs 50 s, $0.06 vs $0.39 <span class="dt">27 Sep</span></div></div>
+    <div class="bet"><div class="tagrow"><span class="pill good">differentiator</span></div><h3>Never touch the user's input</h3><p>Send events only to the target app, never take focus or move the real cursor, pause while you type. Background pass rate with a typing user is where tools differ most: 95%, 45% and 25% with the same model.</p><div class="evidence">Codex: doubled keystrokes still open (#50728, #61326) <span class="dt">13 Nov</span><br>Claude Code CLI: still no background mode (2.1.323) <span class="dt">12 Nov</span></div></div>
+    <div class="bet"><div class="tagrow"><span class="pill good">differentiator</span></div><h3>Answer the moment the app is ready</h3><p>The live UI copy exists for this. Accessibility change notifications say exactly when the UI settled, so each action returns as soon as it's safe and never early. Reading speed isn't the reason: a full walk already takes under 85 ms here.</p><div class="evidence">fixed waits: 42% of interaction time, 63% of it after the screen was ready <span class="dt">28 Oct</span><br>a simple pixel check matched a frontier model at ⅛ the latency <span class="dt">29 Oct</span></div></div>
+    <div class="bet"><div class="tagrow"><span class="pill good">differentiator</span></div><h3>Make Haiku good enough</h3><p>A better tool makes a cheaper model viable. Haiku 5.5 costs $0.10 / $0.50 per million tokens against $4 / $20 for Opus 5.5. If Haiku passes most tasks, cost per task drops by an order of magnitude.</p><div class="evidence">Haiku 5.5 on Aside: 92% foreground, $1.21 per 90 trials vs $25.67 for Opus <span class="dt">12 Nov</span></div></div>
+  </div>
+  <p class="col small"><b>Later, not Sunday:</b> replaying routines that already worked. EchoPath cut median tokens by over 90% and time by about 60% <span class="dt">15 Sep</span>, but PACE found a compiled routine pays off only after 2 to 16 uses once failures are counted <span class="dt">2 Oct</span>.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">05 · Architecture</span>
+    <h2>A long-running daemon, with thin MCP and CLI front ends</h2>
+  </div>
+  <div class="figure">
+    <svg viewBox="0 0 1000 560" role="img" aria-label="Architecture: agents call MCP or CLI, which talk to a daemon containing a router, live UI mirror, batch runner, settle detector, capture and input guard, which act on Mac apps">
+      <defs>
+        <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrow"/></marker>
+        <marker id="aha" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrow-acc"/></marker>
+      </defs>
+      <text x="20" y="28" class="m">AGENTS</text>
+      <rect x="20" y="40" width="170" height="52" rx="8" class="box"/><text x="105" y="71" text-anchor="middle" class="t">Claude Code</text>
+      <rect x="205" y="40" width="170" height="52" rx="8" class="box"/><text x="290" y="71" text-anchor="middle" class="t">Codex</text>
+      <rect x="390" y="40" width="170" height="52" rx="8" class="box"/><text x="475" y="71" text-anchor="middle" class="t">OpenCode</text>
+      <rect x="575" y="40" width="170" height="52" rx="8" class="box"/><text x="660" y="71" text-anchor="middle" class="t">Gemini CLI, others</text>
+      <rect x="120" y="128" width="250" height="50" rx="8" class="box-sunk"/><text x="245" y="152" text-anchor="middle" class="t">MCP server</text><text x="245" y="169" text-anchor="middle" class="s">7 tools, under 1.5k tokens</text>
+      <rect x="400" y="128" width="250" height="50" rx="8" class="box-sunk"/><text x="525" y="152" text-anchor="middle" class="t">CLI</text><text x="525" y="169" text-anchor="middle" class="s">same verbs, for shell-first agents</text>
+      <path d="M105 92 L200 128" class="ln" marker-end="url(#ah)"/>
+      <path d="M290 92 L280 128" class="ln" marker-end="url(#ah)"/>
+      <path d="M475 92 L500 128" class="ln" marker-end="url(#ah)"/>
+      <path d="M660 92 L580 128" class="ln" marker-end="url(#ah)"/>
+      <rect x="20" y="214" width="740" height="250" rx="12" class="box-acc"/>
+      <text x="40" y="240" class="m" style="fill:var(--accent)">DAEMON · Swift, one process, local Unix socket</text>
+      <path d="M245 178 L245 214" class="ln-acc" marker-end="url(#aha)"/>
+      <path d="M525 178 L525 214" class="ln-acc" marker-end="url(#aha)"/>
+      <rect x="40" y="256" width="220" height="86" rx="8" class="box"/>
+      <text x="56" y="280" class="t">Router</text><text x="56" y="300" class="s">script → AX action → pixels</text><text x="56" y="318" class="s">picks the fastest working route</text>
+      <rect x="280" y="256" width="220" height="86" rx="8" class="box"/>
+      <text x="296" y="280" class="t">Live UI mirror</text><text x="296" y="300" class="s">AXObserver per app</text><text x="296" y="318" class="s">stable IDs, outline, diffs</text>
+      <rect x="520" y="256" width="220" height="86" rx="8" class="box"/>
+      <text x="536" y="280" class="t">Batch runner</text><text x="536" y="300" class="s">steps + waits on UI state</text><text x="536" y="318" class="s">stop on first failure</text>
+      <rect x="40" y="358" width="220" height="86" rx="8" class="box"/>
+      <text x="56" y="382" class="t">Settle detector</text><text x="56" y="402" class="s">AX events + pixel check</text><text x="56" y="420" class="s">answers when the UI is ready</text>
+      <rect x="280" y="358" width="220" height="86" rx="8" class="box"/>
+      <text x="296" y="382" class="t">Capture</text><text x="296" y="402" class="s">ScreenCaptureKit, one window</text><text x="296" y="420" class="s">960×540 in 30 ms, zoom on request</text>
+      <rect x="520" y="358" width="220" height="86" rx="8" class="box"/>
+      <text x="536" y="382" class="t">Input guard</text><text x="536" y="402" class="s">events to target pid only</text><text x="536" y="420" class="s">pauses while you type</text>
+      <path d="M260 299 L280 299" class="ln" marker-end="url(#ah)"/>
+      <path d="M500 299 L520 299" class="ln" marker-end="url(#ah)"/>
+      <path d="M630 342 L630 358" class="ln" marker-end="url(#ah)"/>
+      <path d="M390 342 L260 380" class="ln" marker-end="url(#ah)"/>
+      <text x="800" y="228" class="m">macOS</text>
+      <rect x="800" y="240" width="180" height="40" rx="8" class="box-sunk"/><text x="890" y="265" text-anchor="middle" class="s">Accessibility (AX)</text>
+      <rect x="800" y="290" width="180" height="40" rx="8" class="box-sunk"/><text x="890" y="315" text-anchor="middle" class="s">Apple Events / AppleScript</text>
+      <rect x="800" y="340" width="180" height="40" rx="8" class="box-sunk"/><text x="890" y="365" text-anchor="middle" class="s">ScreenCaptureKit</text>
+      <rect x="800" y="390" width="180" height="40" rx="8" class="box-sunk"/><text x="890" y="415" text-anchor="middle" class="s">CGEvent / SkyLight</text>
+      <path d="M760 300 L800 262" class="ln" marker-end="url(#ah)"/>
+      <path d="M760 310 L800 310" class="ln" marker-end="url(#ah)"/>
+      <path d="M760 380 L800 360" class="ln" marker-end="url(#ah)"/>
+      <path d="M760 400 L800 410" class="ln" marker-end="url(#ah)"/>
+      <rect x="800" y="470" width="180" height="60" rx="8" class="box"/>
+      <text x="890" y="496" text-anchor="middle" class="t">Your apps</text><text x="890" y="514" text-anchor="middle" class="s">in the background</text>
+      <path d="M890 430 L890 470" class="ln" marker-end="url(#ah)"/>
+      <rect x="20" y="490" width="740" height="44" rx="8" class="box-sunk"/>
+      <text x="40" y="517" class="s">Reused from Doorman: listen-only event tap (knows when you type), AX window handling, per-app rules, the ledger idea for Undo.</text>
+    </svg>
+    <p class="cap">The daemon holds all the state: mirrors, permissions, recent changes. The MCP server and CLI are thin clients, so both start instantly and see the same apps. AppleScript runs compiled inside the daemon, so there's no 67 ms osascript start per call.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">06 · What the agent sees</span>
+    <h2>A compact outline first, then only what changed</h2>
+  </div>
+  <p class="col">IDs are short and stay the same for as long as the element exists. Decoration, empty groups and invisible elements are dropped. For scale: a 960×540 screenshot costs about 700 tokens on Claude, and agent-desktop's skeleton snapshot of Apple Maps is 273. The first look should land under 400 tokens and each change summary under 150.</p>
+  <div class="two">
+    <div>
+      <span class="label">observe("TextEdit") · first look</span>
+<pre><span class="c"># TextEdit · window w1 "Notes.rtf" · focused t1</span>
+<span class="a">menu</span>  File Edit Format View Window Help
+<span class="a">toolbar</span>
+  b1 button "Bold"   b2 button "Italic"
+  p1 popup "Helvetica" · p2 popup "12"
+<span class="a">t1</span> textarea 412 chars
+   "Meeting notes, 13 Nov. Ship the…"
+<span class="c"># routes: script ✓ (TextEdit dictionary) · ax ✓</span></pre>
+    </div>
+    <div>
+      <span class="label">act(…) result · only the change</span>
+<pre><span class="c"># 3 steps · 0.21 s · stopped: no</span>
+<span class="g">~</span> t1 value 412 → 436 chars
+<span class="g">+</span> s3 sheet "Do you want to save changes?"
+    b9 button "Save"   b10 button "Don't Save"
+<span class="r">-</span> p2 popup "12"
+<span class="c"># settled after 38 ms (AX events quiet, pixels stable)</span></pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">07 · Tool surface</span>
+    <h2>Seven tools, and nothing else</h2>
+  </div>
+  <p class="col">Tool definitions are the biggest fixed cost now. agent-desktop's fixed prefix is about 12.8k tokens, 34 to 68% of all its input <span class="dt">11 Oct</span>; Anthropic's computer toolset adds about 4,500 per request. Changing a tool definition also throws away the whole prompt cache. So the schema stays under 1,500 tokens and never changes mid-session. Each tool is also a CLI verb with the same arguments.</p>
+  <div class="tools">
+    <div class="tool"><span class="sig">apps(query?)</span><p>Find apps, running or installed, through LaunchServices and Spotlight. This is how the agent finds your video editor without being told its name.</p></div>
+    <div class="tool"><span class="sig">observe(app, window?)</span><p>The outline of the focused window. Later calls return only what changed since the last look, or "no change".</p></div>
+    <div class="tool"><span class="sig">act(app, steps[], until?)</span><p>The main tool. Steps: <code>click</code> id, <code>set</code> id value, <code>type</code>, <code>key</code>, <code>scroll</code>, <code>menu</code> path, <code>wait</code> condition. It runs them through the router, waits for the UI to settle after each one, stops at the first failure and returns the change summary.</p></div>
+    <div class="tool"><span class="sig">script(app, source, lang?)</span><p>AppleScript or JXA, compiled and run inside the daemon, for apps with a scripting dictionary. Result as text.</p></div>
+    <div class="tool"><span class="sig">see(app, region?, zoom?)</span><p>A screenshot of one window at 960×540, or a zoomed crop. Only for what the outline can't show: canvases, video frames, charts.</p></div>
+    <div class="tool"><span class="sig">timeline(app, events[])<span class="pill acc tag">stretch</span></span><p>Key and mouse events on a precise schedule, run locally with millisecond timing. The agent plans once and the daemon plays it. This powers the piano test.</p></div>
+    <div class="tool"><span class="sig">routine(name, params?)<span class="pill acc tag">later</span></span><p>Save the last successful <code>act</code> batch as a named routine, or run a saved one. Falls back to the agent if a step no longer matches.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">08 · Performance budgets</span>
+    <h2>Numbers each part has to hit</h2>
+  </div>
+  <p class="col">Targets for Sunday, each set against the best current result. The benchmark run checks all of them.</p>
+  <div class="budgets">
+    <div class="budget"><span class="big">≥ 95%</span><span class="what">background pass, Sonnet 5.5</span><span class="vs">Aside 93 · Cua 57 · Codex plugin 28 <span class="dt">12 Nov</span></span></div>
+    <div class="budget"><span class="big">≥ 85%</span><span class="what">background pass, Haiku 5.5</span><span class="vs">Aside 68 · Cua 55 · Codex plugin 48 <span class="dt">12 Nov</span></span></div>
+    <div class="budget"><span class="big">≤ 5</span><span class="what">model calls per passing task</span><span class="vs">Aside 7 · Codex 9 · Cua 11 · agent-desktop 12 <span class="dt">12 Nov</span></span></div>
+    <div class="budget"><span class="big">&lt; 400</span><span class="what">tokens, first look at a window</span><span class="vs">agent-desktop skeleton 273 · Braus 351 · 960×540 screenshot ~700</span></div>
+    <div class="budget"><span class="big">&lt; 1.5k</span><span class="what">tokens of fixed tool schema</span><span class="vs">Anthropic toolset ~4,500 · agent-desktop prefix ~12,800</span></div>
+    <div class="budget"><span class="big">≤ 100 ms</span><span class="what">from UI settled to answer</span><span class="vs">cua-speedrun authors: ~100 ms wait would have been enough</span></div>
+    <div class="budget"><span class="big">&lt; 0.5%</span><span class="what">actions on a stale screen</span><span class="vs">8 of 10 open-source agents exceed 1% <span class="dt">29 Oct</span></span></div>
+    <div class="budget"><span class="big">0</span><span class="what">stray events reaching your typing</span><span class="vs">checked by the benchmark's typing user on every background trial</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">09 · Benchmarks</span>
+    <h2>Run the shared benchmark first, then our own three tiers</h2>
+  </div>
+  <p class="col">Every setup runs under the same agent, model and prompt; only the computer use tool changes. Baselines, all free under Claude Code: the built-in tool, Cua Driver, agent-desktop, Peekaboo and HCU. Aside Computer Use is in Scale's data already. Codex in its own app with GPT models needs one month of ChatGPT Plus ($20).</p>
+  <div class="tiers">
+    <div class="tier">
+      <div><span class="pill acc">Tier 0</span></div>
+      <h3>Cua Driver Bench v2</h3>
+      <ul>
+        <li>10 tasks: multi-app workflows, precision clicks, interruptions</li>
+        <li>Foreground and background with a simulated typing user</li>
+        <li>Runs through <code>claude -p</code>; already in the reference folder</li>
+      </ul>
+      <p class="pass"><b>Pass:</b> its own checkers. Our numbers line up directly with Scale's published rows. It assumes macOS 26 and Cua used macOS 26 VMs, so check it runs on 27.2.1.</p>
+    </div>
+    <div class="tier">
+      <div><span class="pill good">Tier 1</span></div>
+      <h3>Everyday tasks</h3>
+      <ol>
+        <li>Change a System Settings toggle, then put it back</li>
+        <li>Write a note in Notes and file it in a folder</li>
+        <li>Fill a native form and save through a save prompt</li>
+        <li>Rename and move files in Finder</li>
+        <li>Make a calendar event from details in a Mail message</li>
+      </ol>
+      <p class="pass"><b>Pass:</b> state checked by script after each run. Win on median time, calls and tokens.</p>
+    </div>
+    <div class="tier">
+      <div><span class="pill warn">Tier 2</span></div>
+      <h3>Edit a video, start to finish</h3>
+      <ul>
+        <li>Find the editor installed on the Mac, with no name given</li>
+        <li>Learn its interface from menus, help and the outline</li>
+        <li>Cut three given clips, add a title and music, export 1080p</li>
+      </ul>
+      <p class="pass"><b>Pass:</b> the exported file exists, is 1080p, has the right length and the title frame. Timelines are drawn by the app itself, so this tests the screenshot fallback.</p>
+    </div>
+    <div class="tier">
+      <div><span class="pill acc">Tier 3</span></div>
+      <h3>Play the Moonlight Sonata</h3>
+      <ul>
+        <li>Find a public-domain MIDI of movement 1</li>
+        <li>Open an online piano and work out its key mapping</li>
+        <li>Compile the piece to a timed event list, play it via <code>timeline</code></li>
+      </ul>
+      <p class="pass"><b>Pass:</b> record the audio and compare note onsets to the MIDI. Target: median error under 20 ms. Movement 3 is the follow-up.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">10 · Risks and open questions</span>
+    <h2>What could sink it, and what to check first</h2>
+  </div>
+  <div class="risks">
+    <div class="risk"><span class="pill bad">high</span><div><h3>The field moves weekly</h3><p>Cua shipped about 60 releases since 5 Nov. Aside launched 6 Nov and leads the benchmark. Most of our ideas are already shipping somewhere. The pitch has to be a measured result on the shared benchmark, not the architecture.</p></div></div>
+    <div class="risk"><span class="pill bad">high</span><div><h3>Background input depends on private APIs</h3><p>Clicking without raising a window takes SkyLight calls Apple doesn't document. Cua added background clicks for macOS 27 only on 5 Nov. Read how Cua, Peekaboo and open-computer-use do it first, and keep Accessibility actions as the default route.</p></div></div>
+    <div class="risk"><span class="pill bad">high</span><div><h3>Apps that draw their own UI</h3><p>Video timelines, canvases and games expose almost no Accessibility tree. Local grounding models are still slow on Apple Silicon: 8 to 35 s per step in Aug to Oct reports. Sunday covers only <code>see</code> plus coordinates.</p></div></div>
+    <div class="risk"><span class="pill warn">medium</span><div><h3>Raw trees lose to screenshots</h3><p>Microsoft's Mage-VL study found adding a raw AX channel cut success from 92.0% to 89.6% and added 10 steps <span class="dt">29 Oct</span>. Only a compact outline helps, so measure outline tokens from the first day.</p></div></div>
+    <div class="risk"><span class="pill warn">medium</span><div><h3>Piano timing and polyphony</h3><p>Some web pianos can't play several notes at once, and background tabs may throttle input. Check the site by hand on Saturday.</p></div></div>
+    <div class="risk"><span class="pill good">low</span><div><h3>Permissions friction</h3><p>Needs Accessibility, Screen Recording and Apple Events. Doorman's onboarding already handles the first two.</p></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">11 · The weekend</span>
+    <h2>Prep Friday and Saturday, build Sunday</h2>
+  </div>
+  <div class="plan">
+    <div class="day">
+      <div class="when"><h3>Friday</h3><span class="eyebrow">prep</span></div>
+      <ul>
+        <li class="done">Research the landscape, refreshed to Aug to Nov 2026 sources</li>
+        <li class="done">Measure AX, capture and AppleScript speed on this Mac</li>
+        <li class="done">Clone the reference repos, including HCU</li>
+        <li class="done">Write this spec</li>
+        <li>Finish Doorman PR #7</li>
+        <li>Read the background-input code in Cua, Peekaboo and open-computer-use</li>
+      </ul>
+    </div>
+    <div class="day">
+      <div class="when"><h3>Saturday</h3><span class="eyebrow">prep</span></div>
+      <ul>
+        <li>Get Cua Driver Bench v2 running on this Mac</li>
+        <li>Run it for Claude's built-in tool and Cua as baselines</li>
+        <li>Lock the Tier 1 tasks and their checkers</li>
+        <li>Decide on the Codex month</li>
+        <li>Check the piano site by hand</li>
+        <li>Pick a name</li>
+      </ul>
+    </div>
+    <div class="day build">
+      <div class="when"><h3>Sunday</h3><span class="eyebrow" style="color:var(--accent)">build</span></div>
+      <ul>
+        <li>Daemon, live mirror, outline and diffs</li>
+        <li>Settle detector and input guard</li>
+        <li>Router: script, AX action, pixels</li>
+        <li><code>act</code> batches, MCP server and CLI</li>
+        <li>Run Tier 0 and Tier 1 against the baselines</li>
+        <li>Stretch: <code>timeline</code> and the piano</li>
+      </ul>
+    </div>
+  </div>
+  <p class="col"><b>Done on Sunday means:</b> on Cua Driver Bench v2 with Sonnet 5.5, a background pass rate above Cua's 57% and in reach of Aside's 93%, in fewer model calls than either, with nothing ever reaching the keyboard while the simulated user types.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">12 · Reference folder</span>
+    <h2>Read and race against, never build on</h2>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Repo</th><th>Path on this Mac</th><th>Latest commit</th><th>License</th><th>Read first</th></tr></thead>
+      <tbody>
+        <tr><td><b>Cua</b></td><td class="mono">~/projects/reference/cua</td><td class="mono">13 Nov</td><td>MIT core · FSL bench · AGPL perception</td><td class="mono">libs/cua-driver/rust/crates/platform-macos/src/tools/click.rs, capture.rs</td></tr>
+        <tr><td><b>Cua Driver Bench v2</b></td><td class="mono">…/cua/libs/cua-driver-bench</td><td class="mono">13 Nov</td><td>FSL-1.1-MIT: run it, don't copy it</td><td class="mono">README.md, METHOD.md, automated-eval/macos_bench</td></tr>
+        <tr><td><b>Hybrid Computer Use</b></td><td class="mono">~/projects/reference/Hybrid-Computer-Use</td><td class="mono">2 Nov</td><td>MIT</td><td class="mono">hcu/, paper/, the outline and diff format</td></tr>
+        <tr><td><b>Peekaboo</b></td><td class="mono">~/projects/reference/Peekaboo</td><td class="mono">8 Nov</td><td>MIT</td><td class="mono">…/Services/UI/BackgroundInputDriver.swift</td></tr>
+        <tr><td><b>open-computer-use</b></td><td class="mono">~/projects/reference/open-computer-use</td><td class="mono">13 Nov</td><td>MIT</td><td class="mono">packages/OpenComputerUseKit/…/SkyLightSPI.swift</td></tr>
+        <tr><td><b>agent-desktop</b></td><td class="mono">~/projects/reference/agent-desktop</td><td class="mono">12 Nov</td><td>Apache-2.0</td><td>Skeleton snapshots (273 tokens) and why its IDs used to expire</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="col small">Probe scripts for the local measurements: <span class="mono">scratchpad/cu/bench/axbench.swift</span> and <span class="mono">capbench.swift</span>. Both are read-only.</p>
+</section>
+
+<section>
+  <div class="sec-head">
+    <span class="sec-num">13 · Sources</span>
+    <h2>Every figure, with its date</h2>
+  </div>
+  <div class="refs col">
+    <p>Only sources from 1 Aug 2026 or later, except where nothing newer exists; those are dated. Many results are vendor posts or small samples, so treat them as direction.</p>
+    <ul>
+      <li><a href="https://huggingface.co/datasets/earakely-scale/CuaDriverBench-AgentEnv" target="_blank" rel="noopener">Scale, CuaDriverBench-AgentEnv results</a> <span class="dt">12 Nov 2026</span></li>
+      <li><a href="https://github.com/trycua/cua/blob/main/blog/cua-driver-bench.md" target="_blank" rel="noopener">Cua Driver Bench v2 launch</a> <span class="dt">6 Nov 2026</span></li>
+      <li><a href="https://www.anthropic.com/claude-fable-and-mythos-5-2" target="_blank" rel="noopener">Anthropic, Claude Fable 5.2</a> (OSWorld 2.1 table) <span class="dt">9 Nov 2026</span></li>
+      <li><a href="https://osworld-v2.xlang.ai/" target="_blank" rel="noopener">OSWorld 2.x official board</a> <span class="dt">15 Oct 2026</span></li>
+      <li><a href="https://harshalgajjar.com/blog/agent-desktop-vs-applescript" target="_blank" rel="noopener">Gajjar, agent-desktop vs AppleScript</a> <span class="dt">3 Nov 2026</span></li>
+      <li><a href="https://arxiv.org/abs/2610.41432" target="_blank" rel="noopener">Microsoft, Hybrid Computer Use</a> <span class="dt">30 Oct 2026</span></li>
+      <li><a href="https://arxiv.org/abs/2609.40284" target="_blank" rel="noopener">cua-speedrun</a> and <a href="https://cuaspeedrun.com/results.html" target="_blank" rel="noopener">its board</a> <span class="dt">30 Sep 2026</span></li>
+      <li><a href="https://arxiv.org/abs/2610.39282" target="_blank" rel="noopener">What does "now" mean to your CUA?</a> (stale clicks) <span class="dt">29 Oct 2026</span></li>
+      <li><a href="https://arxiv.org/abs/2610.40747" target="_blank" rel="noopener">Mage-VL-Cowork</a> (raw AX hurts) <span class="dt">29 Oct 2026</span></li>
+      <li><a href="https://portlandaiworks.com/articles/blindsight" target="_blank" rel="noopener">Blindsight</a> (outline vs screenshots) <span class="dt">22 Oct 2026</span></li>
+      <li><a href="https://aclanthology.org/2026.emnlp-main.2451/" target="_blank" rel="noopener">MacAgentBench, EMNLP</a> <span class="dt">20 Oct 2026</span></li>
+      <li><a href="https://dev.to/mimo-3/macos-computer-use-18x-faster-85-cheaper-than-cua-driver-alone-3f1e" target="_blank" rel="noopener">beans-picker vs cua-driver</a> <span class="dt">27 Sep 2026</span></li>
+      <li><a href="https://arxiv.org/abs/2609.16635" target="_blank" rel="noopener">EchoPath</a> and <a href="https://arxiv.org/abs/2610.02932" target="_blank" rel="noopener">PACE</a> (replay) <span class="dt">15 Sep and 2 Oct 2026</span></li>
+      <li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool" target="_blank" rel="noopener">Anthropic computer use toolset docs</a> and <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">pricing</a> <span class="dt">read 13 Nov 2026</span></li>
+      <li><a href="https://code.claude.com/docs/en/changelog.md" target="_blank" rel="noopener">Claude Code changelog</a> and <a href="https://developers.openai.com/codex/changelog" target="_blank" rel="noopener">Codex changelog</a> <span class="dt">read 13 Nov 2026</span></li>
+    </ul>
+  </div>
+</section>
+
+<footer>Spec v1, 13 Nov 2026. Rebuilt from three research passes limited to Aug to Nov 2026 sources, plus measurements on this Mac. Nothing here is built yet.</footer>
+</div>
