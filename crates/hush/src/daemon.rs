@@ -215,7 +215,9 @@ fn watch_idle(last_request: Arc<Mutex<Option<Instant>>>, path: PathBuf) {
             thread::sleep(Duration::from_secs(5));
             let idle = last_request
                 .lock()
-                .map_or(Duration::ZERO, |last| last.elapsed());
+                .ok()
+                .and_then(|last| last.map(|at| at.elapsed()))
+                .unwrap_or(Duration::ZERO);
             if idle >= IDLE {
                 let _ = std::fs::remove_file(&path);
                 std::process::exit(0);
