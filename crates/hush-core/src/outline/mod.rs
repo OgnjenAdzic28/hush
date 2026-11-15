@@ -5,12 +5,14 @@
 //! labels and anything outside the window are dropped. Lines are byte-stable
 //! for the same UI so prompt caching keeps working across calls.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::hash::Hash;
 
 use crate::model::{Role, Snapshot, States};
 use crate::refs::{Ref, RefTable};
 
+mod fold;
 mod plan;
 mod text;
 
@@ -100,6 +102,16 @@ impl View {
     }
 
     pub fn render(&self) -> String {
+        self.render_with(&vec![false; self.lines.len()], &HashMap::new())
+    }
+
+    /// Renders the lines not marked `hidden`. `notes` are written just
+    /// before the line with that index (or at the end), as `(depth, text)`.
+    pub(super) fn render_with(
+        &self,
+        hidden: &[bool],
+        notes: &HashMap<usize, (u16, String)>,
+    ) -> String {
         let mut out = self.header.clone();
         if let Some(focused) = self.focused {
             let _ = write!(out, " · focus {focused}");
@@ -107,7 +119,13 @@ impl View {
         out.push('\n');
         // Notes about left-out elements go after the container's last line.
         let mut open: Vec<(u16, Ref)> = Vec::new();
-        for line in &self.lines {
+        for (index, line) in self.lines.iter().enumerate() {
+            if let Some((depth, text)) = notes.get(&index) {
+                let _ = writeln!(out, "{}… {text}", "  ".repeat(usize::from(*depth)));
+            }
+            if hidden[index] {
+                continue;
+            }
             while let Some(&(depth, r)) = open.last() {
                 if line.depth > depth {
                     break;
@@ -119,6 +137,9 @@ impl View {
             if self.elided.iter().any(|(r, _)| *r == line.r) {
                 open.push((line.depth, line.r));
             }
+        }
+        if let Some((depth, text)) = notes.get(&self.lines.len()) {
+            let _ = writeln!(out, "{}… {text}", "  ".repeat(usize::from(*depth)));
         }
         while let Some((depth, r)) = open.pop() {
             self.render_notes(&mut out, r, depth);

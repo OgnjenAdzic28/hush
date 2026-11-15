@@ -32,6 +32,13 @@ name = "hush-core"
 version = "0.1.0"
 
 [[package]]
+name = "hush-engine"
+version = "0.1.0"
+dependencies = [
+ "hush-core",
+]
+
+[[package]]
 name = "hush-macos"
 version = "0.1.0"
 dependencies = [
