@@ -94,6 +94,19 @@ Shell commands share one background `hush daemon` per user, started by the first
 gone after 10 idle minutes, so refs carry over and repeat looks answer with diffs, as in an MCP
 session. Set `HUSH_NO_DAEMON=1` to run each command in its own process instead.
 
+## How it compares
+
+Measured head to head on the same window and the same Mac (details in
+[docs/comparison.md](docs/comparison.md)):
+
+| Tool | Read, click, type, read | Works hidden | Works on another Space | Tool list (MCP) |
+|---|---|---|---|---|
+| **Hush** | **178 ms** | yes | yes | **598 tokens** |
+| agent-desktop | 653 ms | yes | no | 10,514 tokens |
+| cua-driver | 1,134 ms | yes | mostly | 50,397 tokens |
+| Peekaboo | 3,506 ms | no | no | 13,847 tokens |
+| open-computer-use | 4,297 ms | yes | yes | 2,654 tokens |
+
 ## The lane
 
 Windows an agent works in don't have to be on your screen. The `lane` step moves an app's windows
