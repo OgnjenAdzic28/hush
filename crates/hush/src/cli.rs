@@ -37,15 +37,8 @@ pub(crate) fn command<P: Platform>(
         }
         "timeline" => {
             let app = flags.app()?;
-            // Events as arguments, or one per line on stdin with `-`.
-            let mut events: Vec<String> = flags.positional[1..].to_vec();
-            if events == ["-"] {
-                events = std::io::read_to_string(std::io::stdin())
-                    .map_err(|e| format!("couldn't read events from stdin: {e}"))?
-                    .lines()
-                    .map(str::to_owned)
-                    .collect();
-            }
+            // `-` was replaced with stdin's lines by `with_stdin_events`.
+            let events: Vec<String> = flags.positional[1..].to_vec();
             engine
                 .timeline(&app, flags.value("--window"), &events)
                 .map_err(|e| e.to_string())
@@ -111,6 +104,24 @@ pub(crate) fn with_absolute_out(args: &[String], cwd: &Path) -> Vec<String> {
     args
 }
 
+/// `timeline APP -` with the events read from `input`, one per line. It runs in the calling
+/// process, before a request goes to the daemon, which has no stdin of its own.
+pub(crate) fn with_stdin_events(
+    args: &[String],
+    input: impl std::io::Read,
+) -> Result<Vec<String>, String> {
+    if args.first().map(String::as_str) != Some("timeline")
+        || args.last().map(String::as_str) != Some("-")
+    {
+        return Ok(args.to_vec());
+    }
+    let text = std::io::read_to_string(input)
+        .map_err(|e| format!("couldn't read events from stdin: {e}"))?;
+    let mut expanded = args[..args.len() - 1].to_vec();
+    expanded.extend(text.lines().map(str::to_owned));
+    Ok(expanded)
+}
+
 /// `--name value` options, `--name` switches, and the rest in order.
 struct Flags {
     positional: Vec<String>,
@@ -169,6 +180,24 @@ mod tests {
 
     fn strings(args: &[&str]) -> Vec<String> {
         args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn timeline_events_come_from_stdin_with_a_dash() {
+        let input = "0 tap a\n100 tap b\n".as_bytes();
+        assert_eq!(
+            with_stdin_events(
+                &strings(&["timeline", "Piano", "--window", "W", "-"]),
+                input
+            )
+            .unwrap(),
+            strings(&["timeline", "Piano", "--window", "W", "0 tap a", "100 tap b"])
+        );
+        let untouched = strings(&["act", "Notes", "-"]);
+        assert_eq!(
+            with_stdin_events(&untouched, "x".as_bytes()).unwrap(),
+            untouched
+        );
     }
 
     #[test]
