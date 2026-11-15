@@ -51,6 +51,10 @@ impl Element {
         &self.0
     }
 
+    pub(crate) fn retained(&self) -> CFRetained<AXUIElement> {
+        self.0.clone()
+    }
+
     /// Bounds how long any call to an unresponsive app can block. Set on the
     /// system-wide element it becomes the default for every element.
     pub(crate) fn set_timeout(&self, seconds: f32) {
