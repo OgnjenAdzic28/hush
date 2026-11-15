@@ -27,9 +27,6 @@ use crate::cli;
 const IDLE: Duration = Duration::from_secs(600);
 /// How long a caller waits for a daemon it started to accept connections.
 const START_LIMIT: Duration = Duration::from_secs(3);
-/// A request runs one command, and `act` steps can wait up to their own
-/// limits; this only stops a caller hanging on a wedged daemon.
-const REPLY_LIMIT: Duration = Duration::from_secs(120);
 
 fn socket() -> PathBuf {
     std::env::temp_dir().join("hush.sock")
@@ -74,8 +71,10 @@ enum Reply {
 /// `None` only when the request never reached the daemon. Once it was sent,
 /// the daemon may have acted, so a lost reply is an error, never a reason
 /// to run the command again in process.
+///
+/// The reply has no time limit: a command is bounded by its own steps'
+/// limits (`wait ... within`) and every Accessibility call's timeout.
 fn exchange(mut stream: UnixStream, message: &str) -> Option<Reply> {
-    stream.set_read_timeout(Some(REPLY_LIMIT)).ok()?;
     writeln!(stream, "{message}").ok()?;
     let lost = || {
         Reply::Done(Err(
