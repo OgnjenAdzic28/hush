@@ -35,7 +35,6 @@ I've pulled together everything for all six areas, using only post-August source
   - Gemini 3.6 Flash: 83.0% (OLD, July 2026 model card).
   - Qwen3.8: 86.1% (2026-08-02, aggregator openlm.ai).
 
-![OSWorld-Verified top entries](/Users/ognjenadzic/.aside/u/0/sessions/2026-11-13_ucmbSkxzIYbPHfQE/tmp/osw_verified.png)
 
 ## 2. OSWorld 2.0 / 2.1
 

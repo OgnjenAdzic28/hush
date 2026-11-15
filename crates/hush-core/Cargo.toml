@@ -1,0 +1,11 @@
+[package]
+name = "hush-core"
+description = "Platform-neutral model, outline, diff and settle rules for Hush"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
