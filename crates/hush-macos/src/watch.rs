@@ -13,7 +13,7 @@
 //! the current Space for a while, so they are read then for the same
 //! reason: once the user moves on, they can still be reached.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 use std::sync::{Arc, Mutex, mpsc};
@@ -83,7 +83,11 @@ pub(crate) struct Watcher {
     thread: Thread,
     /// Observers stay alive (and registered) for as long as the watcher.
     observers: Mutex<HashMap<i32, CFRetained<AXObserver>>>,
-    window_observers: Mutex<HashMap<i32, CFRetained<AXObserver>>>,
+    /// Apps whose window observer was asked for. Registering one is a round
+    /// trip to the app that blocks for the messaging timeout when the app
+    /// is busy, so it happens on the registrar thread, never in a call.
+    window_watched: Mutex<HashSet<i32>>,
+    registrar: mpsc::Sender<i32>,
 }
 
 impl std::fmt::Debug for Watcher {
@@ -113,13 +117,20 @@ impl Watcher {
             })
             .expect("spawn the accessibility event thread");
         let run_loop = receiver.recv().expect("event thread starts");
+        let created: Arc<Created> = Arc::default();
+        let registrar = registrar(
+            Loop(run_loop.0.clone()),
+            handle.thread().clone(),
+            Arc::clone(&created),
+        );
         Watcher {
             counts: Arc::default(),
-            created: Arc::default(),
+            created,
             run_loop,
             thread: handle.thread().clone(),
             observers: Mutex::default(),
-            window_observers: Mutex::default(),
+            window_watched: Mutex::default(),
+            registrar,
         }
     }
 
@@ -145,18 +156,15 @@ impl Watcher {
     }
 
     /// Starts keeping the windows `pid` creates, if it isn't yet.
+    /// Starts keeping the windows `pid` creates, without waiting for it.
     pub(crate) fn watch_windows(&self, pid: i32) {
-        let mut observers = self.window_observers.lock().expect("observer lock");
-        if observers.contains_key(&pid) {
-            return;
-        }
-        let counter = Counter::Windows {
-            pid,
-            created: Arc::clone(&self.created),
-        };
-        let notifications = ["AXWindowCreated", "AXApplicationActivated"];
-        if let Some(observer) = self.observe(pid, &notifications, counter) {
-            observers.insert(pid, observer);
+        if self
+            .window_watched
+            .lock()
+            .expect("watched lock")
+            .insert(pid)
+        {
+            let _ = self.registrar.send(pid);
         }
     }
 
@@ -172,12 +180,56 @@ impl Watcher {
             .collect()
     }
 
+    pub(crate) fn activity(&self, pid: i32) -> Activity {
+        self.counts
+            .lock()
+            .expect("counts lock")
+            .get(&pid)
+            .copied()
+            .unwrap_or_default()
+    }
+
     fn observe(
         &self,
         pid: i32,
         notifications: &[&str],
         counter: Counter,
     ) -> Option<CFRetained<AXObserver>> {
+        observe(&self.run_loop, &self.thread, pid, notifications, counter)
+    }
+}
+
+/// Registers window observers one app at a time, in the order asked. The
+/// observers live on this thread for as long as the process.
+fn registrar(run_loop: Loop, thread: Thread, created: Arc<Created>) -> mpsc::Sender<i32> {
+    let (sender, receiver) = mpsc::channel::<i32>();
+    thread::Builder::new()
+        .name("hush-window-observers".into())
+        .spawn(move || {
+            let mut observers = Vec::new();
+            for pid in receiver {
+                let counter = Counter::Windows {
+                    pid,
+                    created: Arc::clone(&created),
+                };
+                let notifications = ["AXWindowCreated", "AXApplicationActivated"];
+                if let Some(observer) = observe(&run_loop, &thread, pid, &notifications, counter) {
+                    observers.push(observer);
+                }
+            }
+        })
+        .expect("spawn the window observer thread");
+    sender
+}
+
+fn observe(
+    run_loop: &Loop,
+    thread: &Thread,
+    pid: i32,
+    notifications: &[&str],
+    counter: Counter,
+) -> Option<CFRetained<AXObserver>> {
+    {
         let mut raw: *mut AXObserver = ptr::null_mut();
         // SAFETY: valid callback and out-pointer.
         let status = unsafe { AXObserver::create(pid, Some(callback), NonNull::from(&mut raw)) };
@@ -196,21 +248,12 @@ impl Watcher {
         // SAFETY: getting the source of a live observer.
         let source = unsafe { observer.run_loop_source() };
         // SAFETY: the default mode constant is always set.
-        self.run_loop
+        run_loop
             .0
             .add_source(Some(&source), unsafe { kCFRunLoopDefaultMode });
-        self.run_loop.0.wake_up();
-        self.thread.unpark();
+        run_loop.0.wake_up();
+        thread.unpark();
         Some(observer)
-    }
-
-    pub(crate) fn activity(&self, pid: i32) -> Activity {
-        self.counts
-            .lock()
-            .expect("counts lock")
-            .get(&pid)
-            .copied()
-            .unwrap_or_default()
     }
 }
 
