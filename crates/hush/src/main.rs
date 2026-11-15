@@ -45,6 +45,13 @@ fn main() -> ExitCode {
         // Before any thread starts, so every thread inherits the mask.
         signals::clean_up_on_exit(args[0] == "daemon");
     }
+    let args = match cli::with_stdin_events(&args, io::stdin()) {
+        Ok(args) => args,
+        Err(message) => {
+            eprintln!("hush: {message}");
+            return ExitCode::FAILURE;
+        }
+    };
     let in_daemon = match args[0].as_str() {
         "mcp" | "daemon" => None,
         _ if std::env::var_os("HUSH_NO_DAEMON").is_some() => None,

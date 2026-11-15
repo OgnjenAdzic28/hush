@@ -117,3 +117,11 @@ background-only input from input the user sees.
   Hush started watching the app), the app's main and focused window, earlier finds and remote
   tokens. Still out of reach: an older window there that no assistive app has asked about
   (see `docs/notes/spaces.md`).
+
+## Moonlight Sonata through `timeline` (15 Nov 2026)
+
+Movement 1 (1,142 notes, 4 min 37 s) in one `timeline` call into virtualpiano.net, in a WebKit window
+on the lane, while the owner worked. Hush posted events 0.13 ms late at the median; the page received
+all 1,142 notes in order, 4 ms from the score at the median and 41 ms at worst; 802 of 821 note starts
+are audible in the recording within 50 ms. The piano window never came to the front. Details and the
+harness: `bench/piano/`.
