@@ -25,6 +25,7 @@ usage:
   hush apps [QUERY]                         running apps, or apps matching QUERY
   hush observe APP [--window W] [--focus REF] [--full]
   hush act APP [--window W] STEP...         each STEP is one quoted step
+  hush timeline APP [--window W] EVENT...   events on a schedule; - reads them from stdin
   hush script APP SOURCE [--js]
   hush see APP [--window W] [--ref REF] [--width N] [--out FILE]
 
@@ -33,7 +34,11 @@ steps: ";
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-        println!("{USAGE}{}", hush_core::step::SYNTAX);
+        println!(
+            "{USAGE}{}\n\ntimeline: {}",
+            hush_core::step::SYNTAX,
+            hush_core::timeline::SYNTAX
+        );
         return ExitCode::SUCCESS;
     }
     if matches!(args[0].as_str(), "mcp" | "daemon") {

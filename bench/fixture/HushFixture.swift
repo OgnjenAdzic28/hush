@@ -10,9 +10,18 @@ FileManager.default.createFile(atPath: logPath, contents: nil)
 let logHandle = FileHandle(forWritingAtPath: logPath)!
 func log(_ s: String) { logHandle.write((s + "\n").data(using: .utf8)!) }
 
+// Milliseconds since boot, the clock Rust's Instant uses on macOS, so a test
+// can compare when input arrived with when it was scheduled.
+func uptime() -> String { String(format: "%.3f", Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW)) / 1e6) }
+
 final class Canvas: NSView {
   var clicks = 0
-  override func mouseDown(with e: NSEvent) { clicks += 1; let p = convert(e.locationInWindow, from: nil); log("canvas click \(clicks) at \(Int(p.x)),\(Int(p.y)) count \(e.clickCount)") }
+  override var acceptsFirstResponder: Bool { true }
+  override func mouseDown(with e: NSEvent) { clicks += 1; window?.makeFirstResponder(self); let p = convert(e.locationInWindow, from: nil); log("canvas click \(clicks) at \(Int(p.x)),\(Int(p.y)) count \(e.clickCount) t=\(uptime())") }
+  override func mouseUp(with e: NSEvent) { log("canvas release t=\(uptime())") }
+  override func mouseDragged(with e: NSEvent) { let p = convert(e.locationInWindow, from: nil); log("canvas drag \(Int(p.x)),\(Int(p.y)) t=\(uptime())") }
+  override func keyDown(with e: NSEvent) { log("canvas key down \(e.charactersIgnoringModifiers ?? "") t=\(uptime())") }
+  override func keyUp(with e: NSEvent) { log("canvas key up \(e.charactersIgnoringModifiers ?? "") t=\(uptime())") }
   override func rightMouseDown(with e: NSEvent) { log("canvas right click") }
   override func scrollWheel(with e: NSEvent) { log("canvas scroll dy \(e.scrollingDeltaY)") }
   override func draw(_ r: NSRect) { NSColor.systemTeal.setFill(); bounds.fill() }

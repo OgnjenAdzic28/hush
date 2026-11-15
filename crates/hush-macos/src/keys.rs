@@ -84,6 +84,26 @@ fn flush(pid: i32, source: Option<&CGEventSource>, pending: &mut Vec<u16>) {
     pending.clear();
 }
 
+/// One key going down or up, for timelines. Modifiers ride on the event's
+/// flags; no modifier key events are sent.
+pub(crate) fn post_key(
+    pid: i32,
+    source: Option<&CGEventSource>,
+    combo: KeyCombo,
+    down: bool,
+) -> bool {
+    let Some(key_code) = code(combo.key) else {
+        return false;
+    };
+    let Some(event) = CGEvent::new_keyboard_event(source, key_code, down) else {
+        return false;
+    };
+    CGEvent::set_flags(Some(&event), flags(combo));
+    mark(&event);
+    CGEvent::post_to_pid(pid, Some(&event));
+    true
+}
+
 fn press(pid: i32, source: Option<&CGEventSource>, key_code: u16, flags: CGEventFlags) {
     for down in [true, false] {
         if let Some(event) = CGEvent::new_keyboard_event(source, key_code, down) {

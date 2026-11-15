@@ -162,6 +162,102 @@ pub(crate) fn click(target: &Target, x: f64, y: f64, button: Button, count: u8) 
     result
 }
 
+/// What one timeline pointer event does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Motion {
+    Down,
+    Up,
+    /// A move; a drag while a button is held.
+    Move {
+        held: Option<Button>,
+    },
+}
+
+/// Fails the way `click` does for an app that can't take pointer input.
+pub(crate) fn check(target: &Target) -> Result<()> {
+    if !target.frontmost && apps::is_hidden(target.pid) {
+        return Err(Error::Unsupported(
+            "the app is hidden, and a hidden app ignores pointer input".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// The press and release outside the window that `click` sends first; a
+/// timeline sends it once before its first pointer event.
+pub(crate) fn prime(target: &Target, source: Option<&CGEventSource>) -> Result<()> {
+    let group = 1;
+    for (kind, phase) in [
+        (CGEventType::LeftMouseDown, 1),
+        (CGEventType::LeftMouseUp, 2),
+    ] {
+        post(
+            target,
+            source,
+            kind,
+            (-1.0, -1.0),
+            1,
+            phase,
+            0,
+            CGMouseButton::Left,
+            group,
+        )?;
+    }
+    thread::sleep(AFTER_PRIMER);
+    Ok(())
+}
+
+/// One pointer event of a timeline at a window point.
+pub(crate) fn post_motion(
+    target: &Target,
+    source: Option<&CGEventSource>,
+    motion: Motion,
+    button: Button,
+    at: (f64, f64),
+) -> Result<()> {
+    let (button_number, mouse_button) = match button {
+        Button::Left => (0, CGMouseButton::Left),
+        Button::Right => (1, CGMouseButton::Right),
+    };
+    let kind = match (motion, button) {
+        (Motion::Down, Button::Left) => CGEventType::LeftMouseDown,
+        (Motion::Down, Button::Right) => CGEventType::RightMouseDown,
+        (Motion::Up, Button::Left) => CGEventType::LeftMouseUp,
+        (Motion::Up, Button::Right) => CGEventType::RightMouseUp,
+        (
+            Motion::Move {
+                held: Some(Button::Left),
+            },
+            _,
+        ) => CGEventType::LeftMouseDragged,
+        (
+            Motion::Move {
+                held: Some(Button::Right),
+            },
+            _,
+        ) => CGEventType::RightMouseDragged,
+        (Motion::Move { held: None }, _) => CGEventType::MouseMoved,
+    };
+    let click_state = i64::from(!matches!(motion, Motion::Move { held: None }));
+    post(
+        target,
+        source,
+        kind,
+        at,
+        click_state,
+        3,
+        button_number,
+        mouse_button,
+        2,
+    )
+}
+
+/// Keeps the synthetic focus until Chromium's renderer has taken the last
+/// event of a timeline.
+pub(crate) fn settle() {
+    thread::sleep(RENDERER_SETTLE);
+}
+
 /// Scrolls by lines at a window-relative point (positive is down/right).
 pub(crate) fn scroll(target: &Target, x: f64, y: f64, dx: i32, dy: i32) -> Result<()> {
     let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState);

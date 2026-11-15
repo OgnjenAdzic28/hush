@@ -118,8 +118,13 @@ fn a_session_initializes_lists_tools_and_calls_them() {
         call(4, "act", json!({"app": "Notes", "steps": ["click b1"]})),
         call(5, "see", json!({"app": "Notes"})),
         call(6, "act", json!({"app": "Notes", "steps": ["fly"]})),
+        call(
+            7,
+            "timeline",
+            json!({"app": "Notes", "events": ["0 tap a", "x up a"]}),
+        ),
     ]);
-    assert_eq!(replies.len(), 6, "the notification gets no reply");
+    assert_eq!(replies.len(), 7, "the notification gets no reply");
     assert_eq!(replies[0]["result"]["protocolVersion"], "2025-03-26");
     let names: Vec<&str> = replies[1]["result"]["tools"]
         .as_array()
@@ -127,7 +132,10 @@ fn a_session_initializes_lists_tools_and_calls_them() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["apps", "observe", "act", "script", "see"]);
+    assert_eq!(
+        names,
+        ["apps", "observe", "act", "timeline", "script", "see"]
+    );
     assert!(
         replies[2]["result"]["content"][0]["text"]
             .as_str()
@@ -147,6 +155,13 @@ fn a_session_initializes_lists_tools_and_calls_them() {
             .as_str()
             .unwrap()
             .contains("unknown step")
+    );
+    assert_eq!(replies[6]["result"]["isError"], true);
+    assert!(
+        replies[6]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("line 2")
     );
 }
 

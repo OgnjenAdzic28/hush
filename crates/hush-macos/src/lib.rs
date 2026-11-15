@@ -20,6 +20,8 @@ mod menu;
 #[cfg(target_os = "macos")]
 mod platform;
 #[cfg(target_os = "macos")]
+mod play;
+#[cfg(target_os = "macos")]
 mod pointer;
 #[cfg(target_os = "macos")]
 mod private;
