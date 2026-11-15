@@ -108,7 +108,11 @@ impl<P: Platform> Engine<P> {
                 diff.render()
             }
         };
-        mirror.mark_seen();
+        // One part of the window says nothing about the rest, so the next
+        // full observe still diffs against what was last seen whole.
+        if options.focus.is_none() {
+            mirror.mark_seen();
+        }
         Ok(text)
     }
 

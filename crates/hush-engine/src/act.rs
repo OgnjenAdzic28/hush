@@ -1,6 +1,7 @@
 //! Running a batch of steps: route each one, wait for the app to settle,
 //! stop at the first failure, and answer with what changed.
 
+use std::collections::HashSet;
 use std::collections::hash_map::Entry;
 use std::fmt::Write;
 use std::thread;
@@ -64,11 +65,6 @@ impl<P: Platform> Engine<P> {
             }
         }
 
-        let snapshot = self.platform.read(&app, &window)?;
-        let mirror = self.mirrors.get_mut(&key).expect("mirror created above");
-        mirror.update(snapshot, &self.options);
-        let diff = Diff::between(&mirror.seen, &mirror.current);
-
         let mut out = format!(
             "# {done}/{} steps · {:.2} s",
             parsed.len(),
@@ -81,6 +77,23 @@ impl<P: Platform> Engine<P> {
         if let Some(stopped) = stopped {
             let _ = writeln!(out, "# {stopped}");
         }
+        // A step may close the window (Save, OK, Close); the report of what
+        // ran still matters more than the read that can't happen.
+        let snapshot = match self.platform.read(&app, &window) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.mirrors.remove(&key);
+                let _ = writeln!(
+                    out,
+                    "# window \"{}\" is gone ({error}); observe the app again",
+                    window.title
+                );
+                return Ok(out);
+            }
+        };
+        let mirror = self.mirrors.get_mut(&key).expect("mirror created above");
+        mirror.update(snapshot, &self.options);
+        let diff = Diff::between(&mirror.seen, &mirror.current);
         if diff.is_empty() {
             out.push_str("# no visible change\n");
         } else if diff.replaces(&mirror.current) {
@@ -111,9 +124,19 @@ impl<P: Platform> Engine<P> {
                     button: hush_core::Button::Left,
                     count: 1,
                 };
+                // The options are the menu items the press brought up; items
+                // that were already there belong to other menus.
+                let before: HashSet<Ref> = self
+                    .menu_items(app, window, &HashSet::new())
+                    .map(|(r, _)| r)
+                    .collect();
                 self.run(app, window, &opened, dirty)?;
                 self.refresh(app, window, dirty)?;
-                let item = self.find_option(app, window, option);
+                let mut exclude = before;
+                if self.menu_items(app, window, &exclude).next().is_none() {
+                    exclude.clear();
+                }
+                let item = self.find_option(app, window, option, &exclude);
                 match item {
                     Some(item) => self.run(
                         app,
@@ -126,7 +149,7 @@ impl<P: Platform> Engine<P> {
                         dirty,
                     ),
                     None => {
-                        let choices = self.option_names(app, window);
+                        let choices = self.option_names(app, window, &exclude);
                         let escape = KeyCombo {
                             modifiers: Default::default(),
                             key: Key::Named(NamedKey::Escape),
@@ -250,13 +273,30 @@ impl<P: Platform> Engine<P> {
             .expect("act creates the mirror first")
     }
 
-    fn find_option(&self, app: &AppInfo, window: &WindowInfo, option: &str) -> Option<Ref> {
+    /// Menu items in the window, in outline order, leaving out `exclude`.
+    fn menu_items<'m>(
+        &'m self,
+        app: &AppInfo,
+        window: &WindowInfo,
+        exclude: &'m HashSet<Ref>,
+    ) -> impl Iterator<Item = (Ref, &'m str)> + 'm {
+        self.mirror(app, window)
+            .nodes()
+            .filter(move |(r, node)| node.role == Role::MenuItem && !exclude.contains(r))
+            .map(|(r, node)| (r, node.name.as_str()))
+    }
+
+    fn find_option(
+        &self,
+        app: &AppInfo,
+        window: &WindowInfo,
+        option: &str,
+        exclude: &HashSet<Ref>,
+    ) -> Option<Ref> {
         let wanted = option.to_lowercase();
         let items: Vec<(Ref, String)> = self
-            .mirror(app, window)
-            .nodes()
-            .filter(|(_, node)| node.role == Role::MenuItem)
-            .map(|(r, node)| (r, node.name.to_lowercase()))
+            .menu_items(app, window, exclude)
+            .map(|(r, name)| (r, name.to_lowercase()))
             .collect();
         items
             .iter()
@@ -265,16 +305,17 @@ impl<P: Platform> Engine<P> {
             .map(|(r, _)| *r)
     }
 
-    fn option_names(&self, app: &AppInfo, window: &WindowInfo) -> Vec<String> {
-        let mut names: Vec<String> = self
-            .mirror(app, window)
-            .nodes()
-            .filter(|(_, node)| node.role == Role::MenuItem && !node.name.is_empty())
-            .map(|(_, node)| format!("\"{}\"", node.name))
-            .collect();
-        names.sort();
-        names.truncate(15);
-        names
+    fn option_names(
+        &self,
+        app: &AppInfo,
+        window: &WindowInfo,
+        exclude: &HashSet<Ref>,
+    ) -> Vec<String> {
+        self.menu_items(app, window, exclude)
+            .filter(|(_, name)| !name.is_empty())
+            .map(|(_, name)| format!("\"{name}\""))
+            .take(15)
+            .collect()
     }
 }
 
