@@ -6,10 +6,9 @@
 //! It opens two small windows behind everything, so it needs the owner's
 //! go-ahead. It runs on a normal Desktop and in a full-screen app; in the
 //! second case the windows are on another Space, which `AXWindows` doesn't
-//! list, so it also tests Hush's off-Space routes. A tool that hides apps an
-//! agent launches (Doorman's lane) leaves the fixture hidden: the
-//! Accessibility steps must still land, and pointer steps must be refused
-//! with a clear reason instead of being lost.
+//! list, so it also tests Hush's off-Space routes. When a tool that hides
+//! apps an agent launches (Doorman's lane) hides the fixture, it shows
+//! itself again without activating, so the pointer routes are tested too.
 //!
 //! cargo test -p hush --release --test live_act -- --ignored --nocapture
 
@@ -68,7 +67,7 @@ fn launch() -> Fixture {
     // Through LaunchServices in the background, the way agents open apps. A
     // child process started directly may activate itself at launch.
     let opened = Command::new("/usr/bin/open")
-        .args(["-g", "-n", "-a"])
+        .args(["-g", "-n", "--env", "FIXTURE_VISIBLE=1", "-a"])
         .arg(dir.join("HushFixture.app"))
         .arg("--args")
         .arg(&log)
@@ -190,23 +189,23 @@ fn every_route_lands_without_disturbing_the_user() {
             "missing \"{expected}\" in the fixture log"
         );
     }
-    if log.contains("hidden") {
+    for expected in ["canvas click 1", "canvas scroll"] {
         assert!(
-            pointer_report.contains("hidden"),
-            "pointer steps on the hidden fixture weren't refused with a reason"
+            log.contains(expected),
+            "missing \"{expected}\" in the fixture log"
         );
-    } else {
-        for expected in ["canvas click 1", "canvas scroll"] {
-            assert!(
-                log.contains(expected),
-                "missing \"{expected}\" in the fixture log"
-            );
-        }
     }
+    assert!(
+        !log.contains("canvas click 2"),
+        "a pointer click landed twice"
+    );
     assert!(!log.contains("increment 3"), "a click landed twice");
     assert!(!log.contains("ACTIVATED"), "the fixture was activated");
+    // The fixture shows itself again after each hide; any other unhide
+    // while acting would be Hush's.
+    let acting = &log[before_acting..];
     assert!(
-        !log[before_acting..].contains("UNHIDDEN"),
+        acting.matches("UNHIDDEN").count() <= acting.matches("hidden\n").count(),
         "the fixture was unhidden while Hush acted"
     );
     assert_eq!(front(&engine), user_app, "the user's front app changed");

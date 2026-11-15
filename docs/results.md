@@ -72,7 +72,16 @@ agent launches, so the fixture was hidden the whole time:
 |---|---|
 | The 7 Accessibility steps above | all landed, 0.58 to 0.66 s for the batch |
 | A second window the fixture opens after launch | found and pressed |
-| Pointer click and scroll | refused with a reason: a hidden app gets the events at the right point, but AppKit doesn't hand them to its views |
+| Pointer click and scroll on the hidden fixture | refused with a reason: a hidden app gets the events at the right point, but AppKit doesn't hand them to its views |
+
+Then from a full-screen Space, with the fixture showing itself again after Doorman hid it, so its
+windows were visible but on the Desktop's Space:
+
+| Route | Result |
+|---|---|
+| The 7 Accessibility steps and the later window | all landed, 0.87 to 0.90 s for the batch |
+| Click, double click, right click, scroll up and down at a point on a canvas | each landed once at the exact window-local point (the first runs clicked twice: fixed by posting through one path) |
+| The user's front app changed / the fixture really activated | never / never (it saw only Hush's in-app synthetic focus) |
 | The fixture activated or unhidden while Hush acted / the user's front app changed | never / never |
 
 Found by these runs and fixed: apps launched after Hush started were invisible (#37); `pick`
@@ -82,8 +91,9 @@ the test now opens it through LaunchServices in the background.
 
 ## Not measured yet
 
-- **Pointer clicks, scrolling and Chromium typing on a real app.** Built to the reference
-  recipes; the pointer routes need the live test on a normal Desktop. Tracked in issue #25.
+- **Chromium typing on a real app.** A Chrome window on another Space or covered drops its page's
+  accessibility tree, so there is nothing to type into by ref; Chrome's switches that prevent
+  this only apply at launch, and Chrome activates itself at launch even with `open -g`.
 - **Cua Driver Bench v2.** Pass rate, model calls and median time for Hush need the bench running
   on macOS 27 and the owner's go-ahead. Until then the comparison above is Hush's fixed costs
   against others' published end-to-end results, which are different things.

@@ -29,9 +29,11 @@ holds private API.
    move to target, primer down/up at (-1, -1), then down/up at the target. Each event gets raw
    fields stamped (40 target pid, 51 window number, 58 click group id, 91/92 window under
    pointer, 1 click state, 0 phase) and `CGEventSetWindowLocation`. On macOS 27 the location
-   is the **window-local** point; before 27 it was the screen point (Cua tests this). Every event
-   goes out through both `SLEventPostToPid` and public `postToPid`. Wrap it in the synthetic
-   activate/deactivate records when the target isn't frontmost.
+   is the **window-local** point; before 27 it was the screen point (Cua tests this). The
+   references post every event through both `SLEventPostToPid` and public `postToPid`; on macOS
+   27.2 each path delivers on its own, so that clicked twice. Hush posts through SkyLight only.
+   Wrap it in the synthetic activate/deactivate records when the target isn't frontmost (the
+   target then believes it is active for the step; the user's front app doesn't change).
 6. **Proof before keys (from Cua):** after the key-window records, re-read the app's focused
    window through AX and only post keys when it really is the target. Refusing is safe; a key
    that lands in a Find bar or another document isn't.

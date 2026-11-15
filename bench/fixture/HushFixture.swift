@@ -73,9 +73,20 @@ final class Delegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
   @objc func reset() { log("menu reset") }
   func controlTextDidChange(_ n: Notification) { log("field \(field.stringValue)") }
   func controlTextDidEndEditing(_ n: Notification) { log("field end \(field.stringValue)") }
-  func applicationDidBecomeActive(_ n: Notification) { log("ACTIVATED") }
+  // Hush's synthetic focus makes the app believe it is active for one step;
+  // only the user's front app changing is a real activation.
+  func applicationDidBecomeActive(_ n: Notification) {
+    let front = NSWorkspace.shared.frontmostApplication?.processIdentifier == getpid()
+    log(front ? "ACTIVATED" : "synthetic active")
+  }
   func applicationDidResignActive(_ n: Notification) { log("resigned active") }
-  func applicationDidHide(_ n: Notification) { log("hidden") }
+  // With FIXTURE_VISIBLE set, the fixture shows itself again (without
+  // activating) when a lane tool such as Doorman hides it, so the pointer
+  // routes, which need a visible window, can be tested.
+  func applicationDidHide(_ n: Notification) {
+    log("hidden")
+    if ProcessInfo.processInfo.environment["FIXTURE_VISIBLE"] != nil { NSApp.unhideWithoutActivation() }
+  }
   func applicationDidUnhide(_ n: Notification) { log("UNHIDDEN") }
 }
 let app = NSApplication.shared
