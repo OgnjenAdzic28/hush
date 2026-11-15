@@ -29,7 +29,7 @@ impl Target<'_> {
             .ok_or_else(|| Error::NotFound(format!("{} isn't running", self.app.name)))
     }
 
-    fn pointer(&self) -> Result<pointer::Target> {
+    pub(crate) fn pointer(&self) -> Result<pointer::Target> {
         Ok(pointer::Target {
             pid: self.pid()?,
             window: u32::try_from(self.window.id)
@@ -263,7 +263,7 @@ fn with_keys(target: &Target<'_>, app_element: &Element, post: impl FnOnce()) ->
 const KEY_RELEASE: Duration = Duration::from_millis(10);
 const KEY_WINDOW_LIMIT: Duration = Duration::from_millis(250);
 
-fn wait_for_key_window(app: &Element, window: &Element) -> bool {
+pub(crate) fn wait_for_key_window(app: &Element, window: &Element) -> bool {
     let deadline = Instant::now() + KEY_WINDOW_LIMIT;
     loop {
         if app.element("AXFocusedWindow").as_ref() == Some(window) {

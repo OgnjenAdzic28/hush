@@ -48,12 +48,18 @@ act TextEdit ["type t1 \" Done.\"", "key cmd+s"]
 | `apps` | Find running and installed apps |
 | `observe` | The outline of a window, then only what changed; `focus` opens one part |
 | `act` | Run a batch of steps and return the change |
+| `timeline` | Play key and pointer events on a millisecond schedule (music, games, drags) |
 | `script` | Run AppleScript (in process, compiled once) or JXA |
 | `see` | A screenshot of one window or element, for what the outline can't show |
 
 Steps: `click REF|X,Y`, `double REF`, `right REF`, `set REF VALUE`, `type [REF] TEXT`,
 `key COMBO [xN]`, `menu A > B`, `pick REF OPTION`, `select REF`, `focus REF`,
 `scroll REF up|down [N]`, `show REF`, `wait gone REF | REF | text "T" | 500ms [within 10s]`.
+
+Timeline events, one per line: `MS down KEY`, `MS up KEY`, `MS tap KEY [HOLD]`, `MS down X,Y`,
+`MS move X,Y`, `MS up X,Y`, `MS tap X,Y [HOLD]`. The agent plans the whole sequence once and Hush
+plays it on a real-time thread: in the live test, 36 notes landed within 0.3 to 0.6 ms of their
+times at the median and 3.4 ms at worst, measured where the app received them.
 
 ## Setup
 
@@ -101,11 +107,13 @@ Measured head to head on the same window and the same Mac (details in
 
 | Tool | Read, click, type, read | Works hidden | Works on another Space | Tool list (MCP) |
 |---|---|---|---|---|
-| **Hush** | **178 ms** | yes | yes | **598 tokens** |
+| **Hush** | **178 ms** | yes | yes | **598 tokens**[^tools] |
 | agent-desktop | 653 ms | yes | no | 10,514 tokens |
 | cua-driver | 1,134 ms | yes | mostly | 50,397 tokens |
 | Peekaboo | 3,506 ms | no | no | 13,847 tokens |
 | open-computer-use | 4,297 ms | yes | yes | 2,654 tokens |
+
+[^tools]: Measured with five tools. With `timeline` added it is 755 tokens.
 
 ## The lane
 

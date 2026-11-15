@@ -5,14 +5,14 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use hush_core::{
-    Activity, AppInfo, Error, Image, Op, Platform, Poll, Rect, Result, Rules, ScriptLanguage,
-    Settle, Snapshot, WindowInfo,
+    Activity, AppInfo, Error, Image, Op, Platform, Played, Poll, Rect, Result, Rules,
+    ScriptLanguage, Settle, Snapshot, Timed, WindowInfo,
 };
 
 use crate::ax::{self, Element};
 use crate::script::{self, Scripts};
 use crate::watch::Watcher;
-use crate::{act, apps, capture, cf, read, windows};
+use crate::{act, apps, capture, cf, play, read, windows};
 
 /// How long one accessibility call may block on an app that isn't
 /// answering. Long enough for a busy app, short enough that a hung one
@@ -224,6 +224,16 @@ impl Platform for MacPlatform {
             Error::Unsupported("this window has no window-server id to capture".into())
         })?;
         capture::window(id, window.frame, region, max_width)
+    }
+
+    fn play(&self, app: &AppInfo, window: &WindowInfo, events: &[Timed]) -> Result<Played> {
+        let window_element = self.window_element(app, window)?;
+        let target = act::Target {
+            app,
+            window,
+            window_element: &window_element,
+        };
+        play::play(&target, events)
     }
 
     fn script(&self, _app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String> {

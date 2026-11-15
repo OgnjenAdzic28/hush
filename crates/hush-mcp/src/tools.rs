@@ -4,7 +4,7 @@
 //! throws away the client's prompt cache, so they are short and fixed for
 //! the life of the server.
 
-use hush_core::{Platform, Ref, ScriptLanguage, step};
+use hush_core::{Platform, Ref, ScriptLanguage, step, timeline};
 use hush_engine::{Engine, ObserveOptions};
 use serde_json::{Value, json};
 
@@ -16,6 +16,12 @@ pub(crate) fn list() -> Value {
          clipboard. Steps run in order, each waits until the app has finished reacting, and the batch stops \
          at the first failure. Returns what changed. Put several steps in one call. Steps: {}",
         step::SYNTAX
+    );
+    let timeline = format!(
+        "Play key and pointer events on a millisecond schedule in an app's window, in the background. \
+         For input whose timing matters: music, games, drags, holds. Plan the whole sequence, then send it \
+         once. {}",
+        timeline::SYNTAX
     );
     json!([
         {
@@ -52,6 +58,19 @@ pub(crate) fn list() -> Value {
                     "window": {"type": "string"}
                 },
                 "required": ["app", "steps"]
+            }
+        },
+        {
+            "name": "timeline",
+            "description": timeline,
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "app": {"type": "string"},
+                    "events": {"type": "array", "items": {"type": "string"}},
+                    "window": {"type": "string"}
+                },
+                "required": ["app", "events"]
             }
         },
         {
@@ -115,20 +134,18 @@ fn run<P: Platform>(engine: &mut Engine<P>, name: &str, args: &Value) -> Result<
             text(engine.observe(app()?, options).map_err(|e| e.to_string())?)
         }
         "act" => {
-            let steps: Vec<String> = args
-                .get("steps")
-                .and_then(Value::as_array)
-                .ok_or("steps must be a list of step strings")?
-                .iter()
-                .map(|s| {
-                    s.as_str()
-                        .map(str::to_owned)
-                        .ok_or("each step must be a string")
-                })
-                .collect::<Result<_, _>>()?;
+            let steps = strings(args, "steps")?;
             text(
                 engine
                     .act(app()?, string("window"), &steps)
+                    .map_err(|e| e.to_string())?,
+            )
+        }
+        "timeline" => {
+            let events = strings(args, "events")?;
+            text(
+                engine
+                    .timeline(app()?, string("window"), &events)
                     .map_err(|e| e.to_string())?,
             )
         }
@@ -165,4 +182,18 @@ fn run<P: Platform>(engine: &mut Engine<P>, name: &str, args: &Value) -> Result<
         }
         other => Err(format!("unknown tool '{other}'")),
     }
+}
+
+/// A list-of-strings argument.
+fn strings(args: &Value, key: &str) -> Result<Vec<String>, String> {
+    args.get(key)
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("{key} must be a list of strings"))?
+        .iter()
+        .map(|s| {
+            s.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| format!("each of {key} must be a string"))
+        })
+        .collect()
 }

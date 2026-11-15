@@ -7,6 +7,7 @@ use crate::key::KeyCombo;
 use crate::model::{AppInfo, Image, Rect, Snapshot, WindowInfo};
 use crate::settle::Activity;
 use crate::step::Button;
+use crate::timeline::{Played, Timed};
 
 /// An operation the platform carries out on the target app only. Every
 /// variant must leave the user's front app, focus, pointer and clipboard
@@ -78,6 +79,14 @@ pub trait Platform {
     fn capture(&self, window: &WindowInfo, region: Option<Rect>, max_width: u32) -> Result<Image>;
 
     fn script(&self, app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String>;
+
+    /// Plays `events` on their schedule from now, on the target app only,
+    /// and says how late each one was posted.
+    fn play(&self, _app: &AppInfo, _window: &WindowInfo, _events: &[Timed]) -> Result<Played> {
+        Err(Error::Unsupported(
+            "this platform can't play timelines yet".into(),
+        ))
+    }
 }
 
 /// Errors are read by a model, so each says what happened and, where it

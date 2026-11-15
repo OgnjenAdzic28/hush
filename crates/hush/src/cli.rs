@@ -35,6 +35,21 @@ pub(crate) fn command<P: Platform>(
                 .act(&app, flags.value("--window"), &steps)
                 .map_err(|e| e.to_string())
         }
+        "timeline" => {
+            let app = flags.app()?;
+            // Events as arguments, or one per line on stdin with `-`.
+            let mut events: Vec<String> = flags.positional[1..].to_vec();
+            if events == ["-"] {
+                events = std::io::read_to_string(std::io::stdin())
+                    .map_err(|e| format!("couldn't read events from stdin: {e}"))?
+                    .lines()
+                    .map(str::to_owned)
+                    .collect();
+            }
+            engine
+                .timeline(&app, flags.value("--window"), &events)
+                .map_err(|e| e.to_string())
+        }
         "script" => {
             let app = flags.app()?;
             let source = flags.positional.get(1).ok_or("script needs SOURCE")?;

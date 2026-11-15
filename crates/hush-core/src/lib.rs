@@ -10,6 +10,7 @@ pub mod platform;
 pub mod refs;
 pub mod settle;
 pub mod step;
+pub mod timeline;
 
 #[cfg(test)]
 mod test_support;
@@ -22,3 +23,4 @@ pub use platform::{Error, Op, Platform, Result, ScriptLanguage};
 pub use refs::{Ref, RefTable};
 pub use settle::{Activity, Outcome, Pace, Poll, Reason, Rules, Settle};
 pub use step::{Button, Condition, Direction, Step, Target};
+pub use timeline::{Input, Played, Timed};
