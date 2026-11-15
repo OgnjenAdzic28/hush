@@ -1,0 +1,44 @@
+# Reading apps that draw their own interface
+
+Some apps show a full interface while giving Accessibility almost nothing. FilmCraft, a
+Premiere-style editor built on egui and wgpu, lists 141 accessibility elements for its main
+window: 135 unnamed groups, a search field, a slider and the window buttons. Its panels, tabs,
+timecodes, bins and timeline exist only as pixels. Games, canvas tools and many editors are the
+same.
+
+When a window has fewer than 20 accessibility elements that name something and is larger than
+500x350 points, Hush also reads its pixels with Apple Vision text recognition and lists each label
+as a `seen` element (`v` refs) with its frame. `click`, `drag`, `scroll` and `timeline` work on them
+through pointer input at their place; `set` and `type` into them fail as unsupported.
+
+Measured on FilmCraft's 1600x980 window, macOS 27.2, 15 Nov 2026:
+
+| | Result |
+|---|---|
+| Labels found | 84 |
+| Full observe, through the daemon | 172 ms (repeat 114 ms) |
+| Text recognition alone | about 30 ms |
+| `click v7` on the "Effect Controls" tab | 0.23 s with the settle wait; the diff showed the panel's new text |
+
+How the picture is read:
+
+- **Fast recognition only.** Accurate mode fails on macOS 27.2 with an inference-engine error
+  (`e5rtError ... 13`), with or without the CPU forced.
+- **At twice the window's size, in gray, with contrast x1.4.** On a 1x display (Hush's lane is
+  one), small interface text is too few pixels tall. Against 36 known labels: 16 exact at the
+  window's own size, 24 at 2x, 25 at 2x in gray (also about 30 ms), 26 at 3x for nearly twice the
+  time.
+- **Lines split at wide gaps.** Vision returns labels that sit close together as one line. Word
+  boxes show where one label ends: a gap wider than 0.8 of the line height starts a new label.
+
+Limits: clip names on a timeline's colored blocks still come out misspelled or merged
+("OcearLSunset.mp"). Icons have no text, and recognition can read a label differently from one
+read to the next, which shows up as a change in the diff.
+
+## Screen Recording and the binary's path
+
+Reading pixels needs Screen Recording for the app running Hush. On the owner's Mac,
+`target/release/hush` itself returned no images from a fresh process while an identical copy
+elsewhere did: macOS keeps a per-binary record for it. If `see` or `seen` labels fail with "the
+window server returned no image", check System Settings > Privacy & Security > Screen & System
+Audio Recording for a `hush` entry.

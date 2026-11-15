@@ -181,10 +181,12 @@ fn bundle_id(path: &Path) -> Option<String> {
 /// Asked through Accessibility each time: `NSRunningApplication.isHidden`
 /// is only refreshed by this process's main run loop, which Hush doesn't run.
 pub(crate) fn is_hidden(pid: i32) -> bool {
+    // AppKit answers a boolean; apps built on AccessKit (egui, winit) answer
+    // the number 1, which read as "not hidden" made `lane` skip showing them.
     crate::ax::Element::application(pid)
         .value("AXHidden")
         .ok()
-        .and_then(|v| crate::cf::boolean(&v))
+        .and_then(|v| crate::cf::boolean(&v).or_else(|| crate::cf::number(&v).map(|n| n != 0.0)))
         .unwrap_or(false)
 }
 
