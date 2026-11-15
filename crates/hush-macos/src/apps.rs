@@ -2,9 +2,10 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Mutex;
 
 use hush_core::AppInfo;
-use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication, NSWorkspace};
+use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication};
 use objc2_core_foundation::CFRetained;
 use objc2_core_graphics::{
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGNullWindowID, kCGWindowLayer,
@@ -13,30 +14,69 @@ use objc2_core_graphics::{
 
 use crate::cf;
 
-/// Apps with a user interface that are running now. NSWorkspace's list is
-/// only refreshed by the main run loop, which a CLI or MCP server may not
-/// run, so it is merged with the owners of on-screen windows, which is
-/// always current.
+/// Apps with a user interface that are running now.
+///
+/// NSWorkspace's list only refreshes on a main run loop, which a CLI or MCP
+/// server doesn't run, so an app launched after Hush started would never
+/// appear. The process list is always current; each new pid is asked once
+/// whether it is a regular app, and the answer is kept until the pid ends.
 pub(crate) fn running() -> Vec<AppInfo> {
     let frontmost = frontmost_pid();
-    let mut by_pid: BTreeMap<i32, AppInfo> = BTreeMap::new();
-    for app in NSWorkspace::sharedWorkspace().runningApplications() {
-        if app.activationPolicy() == NSApplicationActivationPolicy::Regular && !app.isTerminated() {
-            let info = describe(&app, frontmost);
-            by_pid.insert(app.processIdentifier(), info);
+    let pids = all_pids();
+    let mut known = KNOWN
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    known.retain(|pid, _| pids.contains(pid));
+    let mut apps = Vec::new();
+    for pid in pids {
+        let entry = known.entry(pid).or_insert_with(|| {
+            // Only processes inside an app bundle can be regular apps; the
+            // path check is one syscall, the AppKit lookup is not.
+            if !in_app_bundle(pid) {
+                return None;
+            }
+            NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
+                .filter(|app| app.activationPolicy() == NSApplicationActivationPolicy::Regular)
+                .map(|app| describe(&app))
+        });
+        if let Some(app) = entry {
+            let mut app = app.clone();
+            app.frontmost = frontmost == Some(pid);
+            apps.push(app);
         }
     }
-    for pid in window_owners() {
-        if let std::collections::btree_map::Entry::Vacant(slot) = by_pid.entry(pid)
-            && let Some(app) = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
-            && app.activationPolicy() == NSApplicationActivationPolicy::Regular
-        {
-            slot.insert(describe(&app, frontmost));
-        }
-    }
-    let mut apps: Vec<AppInfo> = by_pid.into_values().collect();
     apps.sort_by_key(|app| (!app.frontmost, app.name.to_lowercase()));
     apps
+}
+
+/// What each pid seen so far is: a regular app, or not one.
+static KNOWN: Mutex<BTreeMap<i32, Option<AppInfo>>> = Mutex::new(BTreeMap::new());
+
+fn in_app_bundle(pid: i32) -> bool {
+    let mut buffer = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    // SAFETY: the buffer is PROC_PIDPATHINFO_MAXSIZE bytes, as required.
+    let length =
+        unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+    // `/Contents/MacOS/`, not `.app/Contents/MacOS/`: some apps run from a
+    // code-signing clone named `Name.app.bundle`.
+    length > 0
+        && buffer[..length as usize]
+            .windows(16)
+            .any(|w| w == b"/Contents/MacOS/")
+}
+
+fn all_pids() -> Vec<i32> {
+    // SAFETY: a null buffer asks for the count; the second call fills at
+    // most `capacity` pids and returns how many it wrote.
+    unsafe {
+        let count = libc::proc_listallpids(std::ptr::null_mut(), 0).max(0) as usize;
+        let mut pids = vec![0i32; count + 64];
+        let bytes = (pids.len() * size_of::<i32>()) as libc::c_int;
+        let written = libc::proc_listallpids(pids.as_mut_ptr().cast(), bytes).max(0) as usize;
+        pids.truncate(written.min(pids.len()));
+        pids.retain(|&pid| pid > 0);
+        pids
+    }
 }
 
 /// Installed apps whose name contains `query`, from the standard folders.
@@ -84,7 +124,7 @@ pub(crate) fn frontmost_pid() -> Option<i32> {
     window_owners().first().copied()
 }
 
-fn describe(app: &NSRunningApplication, frontmost: Option<i32>) -> AppInfo {
+fn describe(app: &NSRunningApplication) -> AppInfo {
     let pid = app.processIdentifier();
     AppInfo {
         name: app
@@ -97,7 +137,7 @@ fn describe(app: &NSRunningApplication, frontmost: Option<i32>) -> AppInfo {
             .bundleURL()
             .and_then(|url| url.path())
             .map(|p| p.to_string()),
-        frontmost: frontmost == Some(pid),
+        frontmost: false,
     }
 }
 
