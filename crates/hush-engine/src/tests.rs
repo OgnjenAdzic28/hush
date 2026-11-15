@@ -21,6 +21,7 @@ enum H {
     Menu,
     Helvetica,
     Courier,
+    Stray,
 }
 
 #[derive(Default)]
@@ -30,6 +31,11 @@ struct World {
     font: &'static str,
     menu_open: bool,
     press_unsupported: bool,
+    /// A menu item with the same name in another menu of the window.
+    stray_item: bool,
+    /// Saving closes the window.
+    closes_on_save: bool,
+    closed: bool,
     ops: Vec<String>,
     activity: Activity,
 }
@@ -120,17 +126,34 @@ impl Platform for Fake {
 
     fn read(&self, app: &AppInfo, window: &WindowInfo) -> Result<Snapshot<H>> {
         let world = self.world.borrow();
+        if world.closed {
+            return Err(Error::Stale("window \"Doc\" is gone".into()));
+        }
         let mut nodes = vec![element(H::Window, Role::Window, "Doc", None)];
+        if world.stray_item {
+            nodes.push(element(H::Stray, Role::MenuItem, "Helvetica", Some(0)));
+        }
         let mut name = element(H::Name, Role::TextField, "Name", Some(0));
         name.value = Some(world.name.clone());
         nodes.push(name);
         let mut font = element(H::Font, Role::PopUp, "Font", Some(0));
         font.value = Some(world.font.into());
+        let font_index = nodes.len();
         nodes.push(font);
         if world.menu_open {
-            nodes.push(element(H::Menu, Role::Menu, "", Some(2)));
-            nodes.push(element(H::Helvetica, Role::MenuItem, "Helvetica", Some(3)));
-            nodes.push(element(H::Courier, Role::MenuItem, "Courier", Some(3)));
+            nodes.push(element(H::Menu, Role::Menu, "", Some(font_index)));
+            nodes.push(element(
+                H::Helvetica,
+                Role::MenuItem,
+                "Helvetica",
+                Some(font_index + 1),
+            ));
+            nodes.push(element(
+                H::Courier,
+                Role::MenuItem,
+                "Courier",
+                Some(font_index + 1),
+            ));
         }
         if world.saved {
             nodes.push(element(H::Sheet, Role::Sheet, "Saved", Some(0)));
@@ -155,7 +178,11 @@ impl Platform for Fake {
             Op::Press(_) if self.world.borrow().press_unsupported => {
                 return Err(Error::Unsupported("no press here".into()));
             }
-            Op::Press(H::Save) | Op::Click { .. } => self.world.borrow_mut().saved = true,
+            Op::Press(H::Save) | Op::Click { .. } => {
+                let mut world = self.world.borrow_mut();
+                world.saved = true;
+                world.closed = world.closes_on_save;
+            }
             Op::Press(H::Font) => self.world.borrow_mut().menu_open = true,
             Op::Press(H::Helvetica) => {
                 let mut world = self.world.borrow_mut();
@@ -296,4 +323,39 @@ fn wait_for_text_returns_once_it_appears() {
         .act("Editor", None, &steps(&["wait text \"nope\" within 0.1s"]))
         .unwrap();
     assert!(timeout.contains("stopped at step 1"), "{timeout}");
+}
+
+#[test]
+fn looking_at_one_part_does_not_hide_changes_elsewhere() {
+    let mut engine = Engine::new(Fake::new());
+    engine.observe("Editor", ObserveOptions::default()).unwrap();
+    engine.platform().world.borrow_mut().saved = true;
+    let part = ObserveOptions {
+        focus: Some(hush_core::Ref::parse("t1").unwrap()),
+        ..ObserveOptions::default()
+    };
+    engine.observe("Editor", part).unwrap();
+    let next = engine.observe("Editor", ObserveOptions::default()).unwrap();
+    assert!(next.contains("- b1 button \"Save\""), "{next}");
+}
+
+#[test]
+fn a_step_that_closes_the_window_still_gets_its_report() {
+    let mut engine = Engine::new(Fake::new());
+    engine.observe("Editor", ObserveOptions::default()).unwrap();
+    engine.platform().world.borrow_mut().closes_on_save = true;
+    let report = engine.act("Editor", None, &steps(&["click b1"])).unwrap();
+    assert!(report.starts_with("# 1/1 steps"), "{report}");
+    assert!(report.contains("window \"Doc\" is gone"), "{report}");
+}
+
+#[test]
+fn pick_chooses_from_the_menu_it_opened_not_another_one() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().stray_item = true;
+    engine.observe("Editor", ObserveOptions::default()).unwrap();
+    engine
+        .act("Editor", None, &steps(&["pick p1 Helvetica"]))
+        .unwrap();
+    assert_eq!(engine.platform().ops(), ["Press(Font)", "Press(Helvetica)"]);
 }

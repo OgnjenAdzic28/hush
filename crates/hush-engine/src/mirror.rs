@@ -47,11 +47,13 @@ impl<H: Clone + Eq + Hash> Mirror<H> {
         &self.snapshot
     }
 
-    /// Refs of the current view, with their nodes.
+    /// Refs of the current view with their nodes, in outline order.
     pub(crate) fn nodes(&self) -> impl Iterator<Item = (Ref, &Node<H>)> {
-        self.index
-            .iter()
-            .map(|(&r, &i)| (r, &self.snapshot.nodes[i]))
+        self.current.lines.iter().filter_map(|line| {
+            self.index
+                .get(&line.r)
+                .map(|&i| (line.r, &self.snapshot.nodes[i]))
+        })
     }
 
     pub(crate) fn mark_seen(&mut self) {
