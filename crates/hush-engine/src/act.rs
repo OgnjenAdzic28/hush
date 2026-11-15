@@ -1,0 +1,320 @@
+//! Running a batch of steps: route each one, wait for the app to settle,
+//! stop at the first failure, and answer with what changed.
+
+use std::collections::hash_map::Entry;
+use std::fmt::Write;
+use std::thread;
+use std::time::{Duration, Instant};
+
+use hush_core::{
+    AppInfo, Condition, Diff, Error, Key, KeyCombo, NamedKey, Op, Platform, Reason, Ref, Result,
+    Role, Step, WindowInfo,
+};
+
+use crate::mirror::Mirror;
+use crate::route::route;
+use crate::{Engine, OUTLINE_BUDGET, key, wait};
+
+/// How often a `wait` condition is checked when the app sends no events.
+const CONDITION_POLL: Duration = Duration::from_millis(50);
+
+impl<P: Platform> Engine<P> {
+    /// Runs `steps` (one command each, see `hush_core::step::SYNTAX`) on the
+    /// window and returns a report: steps done, time, and the change.
+    pub fn act(&mut self, app: &str, window: Option<&str>, steps: &[String]) -> Result<String> {
+        let parsed = steps
+            .iter()
+            .enumerate()
+            .map(|(i, text)| {
+                Step::parse(text)
+                    .map_err(|e| Error::Failed(format!("step {} (`{text}`): {e}", i + 1)))
+            })
+            .collect::<Result<Vec<Step>>>()?;
+        if parsed.is_empty() {
+            return Err(Error::Failed("act needs at least one step".into()));
+        }
+
+        let (app, window) = self.target(app, window)?;
+        let key = key(&app, &window);
+        if let Entry::Vacant(entry) = self.mirrors.entry(key) {
+            let snapshot = self.platform.read(&app, &window)?;
+            let mirror = entry.insert(Mirror::new(snapshot, &self.options));
+            mirror.mark_seen();
+        }
+
+        let started = Instant::now();
+        let mut done = 0;
+        let mut stopped = None;
+        let mut dirty = false;
+        let mut last_settle = None;
+        for (i, step) in parsed.iter().enumerate() {
+            match self.run(&app, &window, step, &mut dirty) {
+                Ok(settled) => {
+                    done += 1;
+                    last_settle = settled.or(last_settle);
+                }
+                Err(error) => {
+                    stopped = Some(format!(
+                        "stopped at step {} (`{}`): {error}",
+                        i + 1,
+                        steps[i]
+                    ));
+                    break;
+                }
+            }
+        }
+
+        let snapshot = self.platform.read(&app, &window)?;
+        let mirror = self.mirrors.get_mut(&key).expect("mirror created above");
+        mirror.update(snapshot, &self.options);
+        let diff = Diff::between(&mirror.seen, &mirror.current);
+
+        let mut out = format!(
+            "# {done}/{} steps · {:.2} s",
+            parsed.len(),
+            started.elapsed().as_secs_f64()
+        );
+        if let Some(settle) = last_settle {
+            let _ = write!(out, " · {settle}");
+        }
+        out.push('\n');
+        if let Some(stopped) = stopped {
+            let _ = writeln!(out, "# {stopped}");
+        }
+        if diff.is_empty() {
+            out.push_str("# no visible change\n");
+        } else if diff.replaces(&mirror.current) {
+            out.push_str(&mirror.current.render_within(OUTLINE_BUDGET));
+        } else {
+            out.push_str(&diff.render());
+        }
+        mirror.mark_seen();
+        Ok(out)
+    }
+
+    /// Runs one step. Returns how the app settled, when it was waited for.
+    fn run(
+        &mut self,
+        app: &AppInfo,
+        window: &WindowInfo,
+        step: &Step,
+        dirty: &mut bool,
+    ) -> Result<Option<String>> {
+        match step {
+            Step::Wait { until, within } => {
+                self.wait_for(app, window, until, *within, dirty)?;
+                Ok(None)
+            }
+            Step::Pick { r, option } => {
+                let opened = Step::Click {
+                    target: hush_core::Target::Ref(*r),
+                    button: hush_core::Button::Left,
+                    count: 1,
+                };
+                self.run(app, window, &opened, dirty)?;
+                self.refresh(app, window, dirty)?;
+                let item = self.find_option(app, window, option);
+                match item {
+                    Some(item) => self.run(
+                        app,
+                        window,
+                        &Step::Click {
+                            target: hush_core::Target::Ref(item),
+                            button: hush_core::Button::Left,
+                            count: 1,
+                        },
+                        dirty,
+                    ),
+                    None => {
+                        let choices = self.option_names(app, window);
+                        let escape = KeyCombo {
+                            modifiers: Default::default(),
+                            key: Key::Named(NamedKey::Escape),
+                        };
+                        let _ = self.platform.perform(
+                            app,
+                            window,
+                            Op::Key {
+                                combo: escape,
+                                repeat: 1,
+                            },
+                        );
+                        Err(Error::NotFound(format!(
+                            "no option \"{option}\" in {r}; it has {}",
+                            choices.join(", ")
+                        )))
+                    }
+                }
+            }
+            _ => {
+                if *dirty || needs_refresh(step, self.mirror(app, window)) {
+                    self.refresh(app, window, dirty)?;
+                }
+                let mirror = self
+                    .mirrors
+                    .get(&key(app, window))
+                    .expect("act creates the mirror first");
+                let route = route(step, |r| {
+                    mirror.node(r).ok_or_else(|| {
+                        Error::Stale(format!("{r} isn't in the window any more; observe again"))
+                    })
+                })?;
+                let pace = self.paces.entry(app.pid.unwrap_or(0)).or_default();
+                let pending = wait::begin(&self.platform, app, pace);
+                match self.platform.perform(app, window, route.first) {
+                    Err(Error::Unsupported(_)) if route.fallback.is_some() => {
+                        self.platform
+                            .perform(app, window, route.fallback.expect("checked"))?;
+                    }
+                    other => other?,
+                }
+                let outcome = pending.finish(
+                    &self.platform,
+                    app,
+                    self.paces.entry(app.pid.unwrap_or(0)).or_default(),
+                );
+                if outcome.events > 0 {
+                    *dirty = true;
+                }
+                let ms = outcome.after.as_millis();
+                Ok(Some(match outcome.reason {
+                    Reason::Quiet => format!("settled in {ms} ms"),
+                    Reason::NoReaction => format!("no reaction within {ms} ms"),
+                    Reason::Limit => format!("still busy after {ms} ms"),
+                }))
+            }
+        }
+    }
+
+    fn wait_for(
+        &mut self,
+        app: &AppInfo,
+        window: &WindowInfo,
+        until: &Condition,
+        within: Duration,
+        dirty: &mut bool,
+    ) -> Result<()> {
+        let deadline = Instant::now() + within;
+        if let Condition::Elapsed(time) = until {
+            thread::sleep((*time).min(within));
+            *dirty = true;
+            return Ok(());
+        }
+        loop {
+            if let Condition::Settled = until {
+                let pace = self.paces.entry(app.pid.unwrap_or(0)).or_default();
+                let pending = wait::begin(&self.platform, app, pace);
+                pending.finish(
+                    &self.platform,
+                    app,
+                    self.paces.entry(app.pid.unwrap_or(0)).or_default(),
+                );
+                *dirty = true;
+                return Ok(());
+            }
+            let before = self.platform.activity(app);
+            *dirty = true;
+            self.refresh(app, window, dirty)?;
+            if met(until, self.mirror(app, window)) {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(Error::Failed(format!(
+                    "still waiting after {:.1} s",
+                    within.as_secs_f64()
+                )));
+            }
+            // Check again as soon as the app reports a change.
+            let next = Instant::now() + CONDITION_POLL;
+            while Instant::now() < next.min(deadline)
+                && self.platform.activity(app).events == before.events
+            {
+                thread::sleep(Duration::from_millis(2));
+            }
+        }
+    }
+
+    fn refresh(&mut self, app: &AppInfo, window: &WindowInfo, dirty: &mut bool) -> Result<()> {
+        let snapshot = self.platform.read(app, window)?;
+        let options = self.options.clone();
+        if let Some(mirror) = self.mirrors.get_mut(&key(app, window)) {
+            mirror.update(snapshot, &options);
+        }
+        *dirty = false;
+        Ok(())
+    }
+
+    fn mirror(&self, app: &AppInfo, window: &WindowInfo) -> &Mirror<P::Handle> {
+        self.mirrors
+            .get(&key(app, window))
+            .expect("act creates the mirror first")
+    }
+
+    fn find_option(&self, app: &AppInfo, window: &WindowInfo, option: &str) -> Option<Ref> {
+        let wanted = option.to_lowercase();
+        let items: Vec<(Ref, String)> = self
+            .mirror(app, window)
+            .nodes()
+            .filter(|(_, node)| node.role == Role::MenuItem)
+            .map(|(r, node)| (r, node.name.to_lowercase()))
+            .collect();
+        items
+            .iter()
+            .find(|(_, name)| *name == wanted)
+            .or_else(|| items.iter().find(|(_, name)| name.contains(&wanted)))
+            .map(|(r, _)| *r)
+    }
+
+    fn option_names(&self, app: &AppInfo, window: &WindowInfo) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .mirror(app, window)
+            .nodes()
+            .filter(|(_, node)| node.role == Role::MenuItem && !node.name.is_empty())
+            .map(|(_, node)| format!("\"{}\"", node.name))
+            .collect();
+        names.sort();
+        names.truncate(15);
+        names
+    }
+}
+
+/// A step names a ref the mirror doesn't know (it appeared after the last
+/// read), so the window is read again before routing.
+fn needs_refresh<H: Clone + Eq + std::hash::Hash>(step: &Step, mirror: &Mirror<H>) -> bool {
+    let r = match step {
+        Step::Click {
+            target: hush_core::Target::Ref(r),
+            ..
+        }
+        | Step::Scroll {
+            target: hush_core::Target::Ref(r),
+            ..
+        }
+        | Step::Set { r, .. }
+        | Step::Select { r }
+        | Step::Focus { r }
+        | Step::Show { r }
+        | Step::Pick { r, .. } => *r,
+        Step::Type { into: Some(r), .. } => *r,
+        _ => return false,
+    };
+    mirror.node(r).is_none()
+}
+
+fn met<H: Clone + Eq + std::hash::Hash>(until: &Condition, mirror: &Mirror<H>) -> bool {
+    match until {
+        Condition::Exists(r) => mirror.node(*r).is_some(),
+        Condition::Gone(r) => mirror.node(*r).is_none(),
+        Condition::Text(text) => {
+            let wanted = text.to_lowercase();
+            mirror.snapshot().nodes.iter().any(|node| {
+                node.name.to_lowercase().contains(&wanted)
+                    || node
+                        .value
+                        .as_deref()
+                        .is_some_and(|v| v.to_lowercase().contains(&wanted))
+            })
+        }
+        Condition::Settled | Condition::Elapsed(_) => true,
+    }
+}
