@@ -3,9 +3,8 @@
 Computer use that stays out of your way. Hush lets any coding agent see and drive the apps on
 your Mac in the background, while you keep typing in front of them.
 
-> **Status: early development.** Reading, outlines, diffs, scripts and screenshots are measured
-> on a real Mac. Acting on real apps is built but not yet verified there (see
-> [results](docs/results.md)).
+> **Status: early development.** Reading, acting, the lane and timelines are measured on a real
+> Mac (see [results](docs/results.md) and [the benchmark run](docs/benchmark.md)).
 
 ## What it does
 
@@ -116,6 +115,19 @@ Measured head to head on the same window and the same Mac (details in
 | open-computer-use | 4,297 ms | yes | yes | 2,654 tokens |
 
 [^tools]: Measured with five tools. With `timeline` added it is 755 tokens.
+
+## Cua Driver Bench v2 (quiet run)
+
+The five BenchLab tasks Bench v2 runs in the background, on the owner's Mac while they worked, with
+`claude -p` driving Hush and the bench's own checkers grading (details and every difference from
+the official runner in [docs/benchmark.md](docs/benchmark.md)):
+
+| Model | Passed | User never disturbed | Median time | Median turns |
+|---|---|---|---|---|
+| Claude Sonnet 5.5 | 15/15 | 15/15 | 17.8 s | 8 |
+| Claude Haiku 5.5 | 15/15 | 15/15 | 21.6 s | 14 |
+
+It's 5 of Bench v2's 8 background tasks; the multi-app ones need apps not installed here.
 
 ## The lane
 
