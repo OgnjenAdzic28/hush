@@ -1,0 +1,119 @@
+[
+ {
+  "tool": "Hush",
+  "rounds": 5,
+  "rounds fully landed": 5,
+  "median ms": {
+   "observe": 46.9,
+   "click": 61.9,
+   "type": 56.3,
+   "observe again": 41.1
+  },
+  "median tokens": {
+   "observe": 12,
+   "observe again": 12
+  },
+  "first read": {
+   "ms": 232.6,
+   "tokens": 89
+  },
+  "round trip ms (median sum)": 206.2,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "agent-desktop",
+  "rounds": 5,
+  "rounds fully landed": 5,
+  "median ms": {
+   "observe": 171.6,
+   "click": 77.0,
+   "type": 73.6,
+   "observe again": 164.7
+  },
+  "median tokens": {
+   "observe": 300,
+   "observe again": 300
+  },
+  "first read": {
+   "ms": 325.6,
+   "tokens": 299
+  },
+  "round trip ms (median sum)": 486.9,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "open-computer-use",
+  "rounds": 5,
+  "rounds fully landed": 5,
+  "median ms": {
+   "observe": 306.9,
+   "click": 2242.7,
+   "type": 1973.5,
+   "observe again": 344.1
+  },
+  "median tokens": {
+   "observe": 126,
+   "observe again": 126
+  },
+  "first read": {
+   "ms": 306.9,
+   "tokens": 156
+  },
+  "round trip ms (median sum)": 4867.2,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "cua-driver",
+  "rounds": 5,
+  "rounds fully landed": 5,
+  "median ms": {
+   "observe": 713.6,
+   "click": 525.3,
+   "type": 395.0,
+   "observe again": 842.5
+  },
+  "median tokens": {
+   "observe": 150,
+   "observe again": 150
+  },
+  "first read": {
+   "ms": 700.4,
+   "tokens": 132
+  },
+  "round trip ms (median sum)": 2476.4,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "Peekaboo",
+  "rounds": 5,
+  "rounds fully landed": 0,
+  "median ms": {
+   "observe": 1188.8,
+   "click": null,
+   "type": null,
+   "observe again": null
+  },
+  "median tokens": {
+   "observe": 332,
+   "observe again": null
+  },
+  "first read": {
+   "ms": 1146.0,
+   "tokens": 332
+  },
+  "round trip ms (median sum)": 1188.8,
+  "disturbances": 0,
+  "failures": [
+   "observe: {\n  \"success\" : false,\n  \"data\" : null,\n  \"error\" : {\n    \"message\" : \"Failed to start stream due to audio\\/video capture failure\",\n    \"code\" : \"INTERNAL_SWIFT_ERROR\"\n  },\n  \"debug_logs\" : [\n    \"[20",
+   "round 0: couldn't read the window",
+   "observe: {\n  \"error\" : {\n    \"code\" : \"INTERNAL_SWIFT_ERROR\",\n    \"message\" : \"Failed to start stream due to audio\\/video capture failure\"\n  },\n  \"success\" : false,\n  \"data\" : null,\n  \"debug_logs\" : [\n    \"[20",
+   "round 1: couldn't read the window",
+   "observe: {\n  \"data\" : null,\n  \"success\" : false,\n  \"debug_logs\" : [\n    \"[2026-11-15T16:34:12.053Z] DEBUG: Runtime host: local (in-process fallback; rejected daemon auto-start skipped: unsigned CLI without PEE",
+   "round 2: couldn't read the window"
+  ]
+ }
+]

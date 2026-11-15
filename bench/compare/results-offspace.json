@@ -1,0 +1,110 @@
+[
+ {
+  "tool": "Hush",
+  "rounds": 5,
+  "rounds fully landed": 5,
+  "median ms": {
+   "observe": 14.1,
+   "click": 115.1,
+   "type": 29.5,
+   "observe again": 14.4
+  },
+  "median tokens": {
+   "observe": 12,
+   "observe again": 12
+  },
+  "first read": {
+   "ms": 166.7,
+   "tokens": 78
+  },
+  "round trip ms (median sum)": 173.1,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "agent-desktop",
+  "rounds": 5,
+  "rounds fully landed": 0,
+  "failures": [
+   "list-windows returns no windows for an app whose windows are on another Space; snapshot: WINDOW_NOT_FOUND"
+  ]
+ },
+ {
+  "tool": "open-computer-use",
+  "rounds": 5,
+  "rounds fully landed": 5,
+  "median ms": {
+   "observe": 202.8,
+   "click": 2187.6,
+   "type": 1749.6,
+   "observe again": 212.1
+  },
+  "median tokens": {
+   "observe": 128,
+   "observe again": 128
+  },
+  "first read": {
+   "ms": 240.4,
+   "tokens": 132
+  },
+  "round trip ms (median sum)": 4352.1,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "cua-driver",
+  "rounds": 5,
+  "rounds fully landed": 4,
+  "median ms": {
+   "observe": 304.5,
+   "click": 573.1,
+   "type": 385.8,
+   "observe again": 219.7
+  },
+  "median tokens": {
+   "observe": 519,
+   "observe again": 520
+  },
+  "first read": {
+   "ms": 304.5,
+   "tokens": 502
+  },
+  "round trip ms (median sum)": 1483.1,
+  "disturbances": 0,
+  "failures": [
+   "click: element_token is stale or unknown; call get_window_state again to refresh. This token cannot be attributed to a pid: this runtime never minted it, or the snapshot it names has been gone long enough th",
+   "type: element_token is stale or unknown; call get_window_state again to refresh. This token cannot be attributed to a pid: this runtime never minted it, or the snapshot it names has been gone long enough th",
+   "round 2: the click didn't land",
+   "round 2: the typing didn't land"
+  ]
+ },
+ {
+  "tool": "Peekaboo",
+  "rounds": 5,
+  "rounds fully landed": 0,
+  "median ms": {
+   "observe": 2533.2,
+   "click": 1962.7,
+   "type": 2789.3,
+   "observe again": 2293.9
+  },
+  "median tokens": {
+   "observe": 554,
+   "observe again": 647.0
+  },
+  "first read": {
+   "ms": 2277.5,
+   "tokens": 740
+  },
+  "round trip ms (median sum)": 9579.1,
+  "disturbances": 0,
+  "failures": [
+   "type: Error: Snapshot is stale: the most recent UI snapshot was invalidated because an earlier command changed the desktop. Re-run peekaboo see to refresh.\n",
+   "round 0: the typing didn't land",
+   "observe: {\n  \"error\" : {\n    \"retry_safe\" : true,\n    \"message\" : \"Warning: AX tree incomplete at incomplete accessibility read. Retry once to obtain a fresh observation. If the exact target is a transient she",
+   "round 1: couldn't read the window",
+   "observe: {\n  \"success\" : false,\n  \"debug_logs\" : [\n    \"[2026-11-15T16:35:33.569Z] DEBUG: Runtime host: local (in-process fallback; rejected daemon auto-start skipped: unsigned CLI without PEEKABOO_ALLOW_UNSIG",
+   "round 2: couldn't read the window"
+  ]
+ }
+]

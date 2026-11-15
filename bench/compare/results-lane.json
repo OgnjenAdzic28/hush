@@ -1,0 +1,141 @@
+[
+ {
+  "tool": "Hush",
+  "rounds": 10,
+  "rounds fully landed": 10,
+  "median ms": {
+   "observe": 14.3,
+   "click": 116.6,
+   "type": 31.4,
+   "observe again": 15.5
+  },
+  "median tokens": {
+   "observe": 12.0,
+   "observe again": 12.0
+  },
+  "first read": {
+   "ms": 15.6,
+   "tokens": 12
+  },
+  "round trip ms (median sum)": 177.8,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "Hush (no daemon)",
+  "rounds": 10,
+  "rounds fully landed": 10,
+  "median ms": {
+   "observe": 117.3,
+   "click": 227.8,
+   "type": 163.9,
+   "observe again": 121.0
+  },
+  "median tokens": {
+   "observe": 96.0,
+   "observe again": 96.5
+  },
+  "first read": {
+   "ms": 122.2,
+   "tokens": 94
+  },
+  "round trip ms (median sum)": 630.0,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "agent-desktop",
+  "rounds": 10,
+  "rounds fully landed": 10,
+  "median ms": {
+   "observe": 184.7,
+   "click": 204.9,
+   "type": 75.3,
+   "observe again": 188.2
+  },
+  "median tokens": {
+   "observe": 308.5,
+   "observe again": 308.0
+  },
+  "first read": {
+   "ms": 195.3,
+   "tokens": 306
+  },
+  "round trip ms (median sum)": 653.1,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "open-computer-use",
+  "rounds": 10,
+  "rounds fully landed": 10,
+  "median ms": {
+   "observe": 207.4,
+   "click": 2147.9,
+   "type": 1734.7,
+   "observe again": 206.7
+  },
+  "median tokens": {
+   "observe": 128.0,
+   "observe again": 128.0
+  },
+  "first read": {
+   "ms": 226.7,
+   "tokens": 178
+  },
+  "round trip ms (median sum)": 4296.7,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "cua-driver",
+  "rounds": 10,
+  "rounds fully landed": 10,
+  "median ms": {
+   "observe": 76.9,
+   "click": 569.4,
+   "type": 392.3,
+   "observe again": 95.3
+  },
+  "median tokens": {
+   "observe": 521.0,
+   "observe again": 521.5
+  },
+  "first read": {
+   "ms": 192.5,
+   "tokens": 502
+  },
+  "round trip ms (median sum)": 1133.9,
+  "disturbances": 0,
+  "failures": []
+ },
+ {
+  "tool": "Peekaboo",
+  "rounds": 10,
+  "rounds fully landed": 10,
+  "median ms": {
+   "observe": 867.4,
+   "click": 369.6,
+   "type": 1381.8,
+   "observe again": 886.8
+  },
+  "median tokens": {
+   "observe": 752.0,
+   "observe again": 752.5
+  },
+  "first read": {
+   "ms": 1045.3,
+   "tokens": 750
+  },
+  "round trip ms (median sum)": 3505.6,
+  "disturbances": 0,
+  "failures": [
+   "type: \u26a0\ufe0f Action dispatched but not verified; observe the target before retrying\nError: Typing did not return an accepted outcome. Hint: Follow the canonical escalation metadata before deciding whether to re",
+   "type: \u26a0\ufe0f Action dispatched but not verified; observe the target before retrying\nError: Typing did not return an accepted outcome. Hint: Follow the canonical escalation metadata before deciding whether to re",
+   "type: \u26a0\ufe0f Action dispatched but not verified; observe the target before retrying\nError: Typing did not return an accepted outcome. Hint: Follow the canonical escalation metadata before deciding whether to re",
+   "type: \u26a0\ufe0f Action dispatched but not verified; observe the target before retrying\nError: Typing did not return an accepted outcome. Hint: Follow the canonical escalation metadata before deciding whether to re",
+   "type: \u26a0\ufe0f Action dispatched but not verified; observe the target before retrying\nError: Typing did not return an accepted outcome. Hint: Follow the canonical escalation metadata before deciding whether to re",
+   "type: \u26a0\ufe0f Action dispatched but not verified; observe the target before retrying\nError: Typing did not return an accepted outcome. Hint: Follow the canonical escalation metadata before deciding whether to re"
+  ]
+ }
+]
