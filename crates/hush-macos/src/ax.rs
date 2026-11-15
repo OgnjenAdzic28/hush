@@ -110,18 +110,6 @@ impl Element {
             .unwrap_or_default()
     }
 
-    /// How many values an array attribute holds, without fetching them.
-    pub(crate) fn count(&self, attribute: &str) -> Option<usize> {
-        let name = cf::cfstr(attribute);
-        let mut count = 0;
-        // SAFETY: valid out-pointer.
-        let status = unsafe {
-            self.0
-                .attribute_value_count(&name, NonNull::from(&mut count))
-        };
-        (status == AXError::Success).then(|| usize::try_from(count).unwrap_or(0))
-    }
-
     pub(crate) fn pid(&self) -> Option<i32> {
         let mut pid = 0;
         // SAFETY: valid out-pointer.
