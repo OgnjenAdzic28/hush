@@ -123,6 +123,12 @@ impl MacPlatform {
     }
 }
 
+impl Drop for MacPlatform {
+    fn drop(&mut self) {
+        crate::lane::release();
+    }
+}
+
 impl Platform for MacPlatform {
     type Handle = Element;
 
@@ -189,6 +195,21 @@ impl Platform for MacPlatform {
     }
 
     fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
+        if matches!(op, Op::Lane) {
+            let pid = app
+                .pid
+                .map(|p| p as i32)
+                .ok_or_else(|| Error::NotFound(format!("{} isn't running", app.name)))?;
+            // Main window first: it is the one raised, so it stays main.
+            let order = self.windows(app)?;
+            let cache = self.windows.borrow();
+            let elements: Vec<Element> = order
+                .iter()
+                .filter_map(|info| cache.get(&info.id).cloned())
+                .collect();
+            drop(cache);
+            return crate::lane::park(pid, &elements);
+        }
         let window_element = self.window_element(app, window)?;
         let target = act::Target {
             app,

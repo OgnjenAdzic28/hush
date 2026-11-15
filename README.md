@@ -94,6 +94,19 @@ Shell commands share one background `hush daemon` per user, started by the first
 gone after 10 idle minutes, so refs carry over and repeat looks answer with diffs, as in an MCP
 session. Set `HUSH_NO_DAEMON=1` to run each command in its own process instead.
 
+## The lane
+
+Windows an agent works in don't have to be on your screen. The `lane` step moves an app's windows
+to Hush's lane: a virtual display (1920x1080) that nobody can see, placed diagonally off a corner
+of your main display so the pointer can't wander onto it. There the windows render, take clicks,
+scrolls and keys, can be captured, and Chromium keeps its pages' accessibility trees. An app that
+was hidden (cmd+H, or a lane tool such as Doorman) shows itself only there, without activating.
+The display exists while the Hush daemon or MCP server runs; when that process ends, even by a
+signal, the apps it moved are hidden first, so nothing lands on your screen.
+
+Use it for apps the agent launched: it takes their windows off your screen until you bring them
+back.
+
 ## Platforms
 
 macOS first. The core, the engine and the MCP server are platform-neutral, so Windows and Linux

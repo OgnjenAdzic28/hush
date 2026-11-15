@@ -15,7 +15,7 @@ final class Canvas: NSView {
   override func mouseDown(with e: NSEvent) { clicks += 1; let p = convert(e.locationInWindow, from: nil); log("canvas click \(clicks) at \(Int(p.x)),\(Int(p.y)) count \(e.clickCount)") }
   override func rightMouseDown(with e: NSEvent) { log("canvas right click") }
   override func scrollWheel(with e: NSEvent) { log("canvas scroll dy \(e.scrollingDeltaY)") }
-  override func draw(_ r: NSRect) { NSColor.systemTeal.setFill(); r.fill() }
+  override func draw(_ r: NSRect) { NSColor.systemTeal.setFill(); bounds.fill() }
 }
 
 final class Delegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {

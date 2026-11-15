@@ -44,6 +44,7 @@ pub(crate) fn route<'a, H: 'a>(
             repeat: *repeat,
         }),
         Step::Menu { path } => Route::only(Op::Menu(path)),
+        Step::Lane => Route::only(Op::Lane),
         Step::Select { r } => Route::only(Op::Select(&node(*r)?.handle)),
         Step::Focus { r } => Route::only(Op::Focus(&node(*r)?.handle)),
         Step::Show { r } => Route::only(Op::ScrollIntoView(&node(*r)?.handle)),

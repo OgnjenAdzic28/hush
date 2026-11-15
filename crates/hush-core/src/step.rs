@@ -85,6 +85,9 @@ pub enum Step {
         until: Condition,
         within: Duration,
     },
+    /// Move the app's windows to Hush's lane: a display the user can't see,
+    /// where they render and take pointer input without being on screen.
+    Lane,
 }
 
 /// The longest a `wait` may run unless it says otherwise.
@@ -93,7 +96,8 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 /// Syntax help for tool descriptions. Kept short: it rides on every request.
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
-scroll REF up|down|left|right [N] · show REF · wait gone REF|REF|text \"T\"|500ms [within 10s]";
+scroll REF up|down|left|right [N] · show REF · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
+lane (move the app's windows off screen, where they still render and take clicks)";
 
 impl Step {
     pub fn parse(line: &str) -> Result<Step, String> {
@@ -158,6 +162,7 @@ impl Step {
             "show" => Step::Show { r: only_ref(rest)? },
             "scroll" => scroll(rest)?,
             "wait" => wait(rest)?,
+            "lane" if rest.is_empty() => Step::Lane,
             "" => return Err("empty step".into()),
             other => return Err(format!("unknown step '{other}'. Steps: {SYNTAX}")),
         };

@@ -102,6 +102,7 @@ fn unavailable() -> Error {
 /// tells the window server the input is live, as Chromium requires.
 pub(crate) fn post_to_pid(pid: i32, event: &CGEvent) -> Result<()> {
     let api = skylight().ok_or_else(unavailable)?;
+    crate::keys::mark(event);
     // SAFETY: the event is live for the call.
     unsafe { (api.post_to_pid)(pid, std::ptr::from_ref(event).cast_mut().cast()) };
     Ok(())

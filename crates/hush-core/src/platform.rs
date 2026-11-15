@@ -13,6 +13,8 @@ use crate::step::Button;
 /// alone; a platform that can't do that for some app returns an error.
 #[derive(Debug)]
 pub enum Op<'a, H> {
+    /// Move the app's windows to the platform's off-screen lane.
+    Lane,
     Press(&'a H),
     ShowMenu(&'a H),
     SetValue(&'a H, &'a str),
