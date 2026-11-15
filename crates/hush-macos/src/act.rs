@@ -45,6 +45,8 @@ pub(crate) fn perform(target: &Target<'_>, op: Op<'_, Element>) -> Result<()> {
     let pid = target.pid()?;
     let app_element = Element::application(pid);
     match op {
+        // The platform handles it with every window of the app.
+        Op::Lane => Err(Error::Unsupported("lane needs the whole app".into())),
         Op::Press(element) => perform_action(element, "AXPress"),
         Op::ShowMenu(element) => perform_action(element, "AXShowMenu"),
         Op::ScrollIntoView(element) => perform_action(element, "AXScrollToVisible"),
@@ -53,6 +55,14 @@ pub(crate) fn perform(target: &Target<'_>, op: Op<'_, Element>) -> Result<()> {
         Op::SetValue(element, value) => set_value(element, value),
         Op::Type { text, into } => type_text(target, &app_element, into, text),
         Op::Key { combo, repeat } => {
+            // Chromium greys out its menu items while its window isn't key,
+            // but takes Cmd keys inside its synthetic key window like any
+            // other key.
+            if combo.modifiers.cmd && apps::is_chromium(app) && keys::code(combo.key).is_some() {
+                return with_keys(target, &app_element, || {
+                    keys::post_combo(pid, combo, repeat);
+                });
+            }
             if combo.modifiers.cmd {
                 // Background apps ignore Cmd key events; their menu items don't.
                 for _ in 0..repeat.max(1) {
@@ -107,7 +117,7 @@ pub(crate) fn set_bool(element: &Element, attribute: &str, value: bool) -> Resul
     set(element, attribute, CFBoolean::new(value))
 }
 
-fn set(element: &Element, attribute: &str, value: &CFType) -> Result<()> {
+pub(crate) fn set(element: &Element, attribute: &str, value: &CFType) -> Result<()> {
     let name = cf::cfstr(attribute);
     // SAFETY: setting an attribute on a live element with a CF value.
     let status = unsafe { element.raw().set_attribute_value(&name, value) };
@@ -200,7 +210,10 @@ fn type_text(
     };
     // An app that accepted the insert has the text, even if its value
     // updates a moment later; typing it again as keys would double it.
-    if let Some(field) = &field
+    // Chromium accepts the insert and ignores it (checked on Chrome 156 on
+    // macOS 27.2), so it always gets keys.
+    if !apps::is_chromium(target.app)
+        && let Some(field) = &field
         && set(field, "AXSelectedText", &CFString::from_str(text)).is_ok()
     {
         return Ok(());

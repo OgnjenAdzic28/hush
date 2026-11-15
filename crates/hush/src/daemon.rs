@@ -13,6 +13,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -28,7 +29,7 @@ const IDLE: Duration = Duration::from_secs(600);
 /// How long a caller waits for a daemon it started to accept connections.
 const START_LIMIT: Duration = Duration::from_secs(3);
 
-fn socket() -> PathBuf {
+pub(crate) fn socket() -> PathBuf {
     std::env::temp_dir().join("hush.sock")
 }
 
@@ -149,9 +150,16 @@ pub(crate) fn serve<P: Platform>(engine: &mut Engine<P>) -> Result<(), String> {
     };
     // `None` while a command runs, so a long one is never cut off.
     let last_request = Arc::new(Mutex::new(Some(Instant::now())));
-    watch_idle(Arc::clone(&last_request), path.clone());
+    let stop = Arc::new(AtomicBool::new(false));
+    watch_idle(Arc::clone(&last_request), Arc::clone(&stop), path.clone());
     let build = build();
     for stream in listener.incoming() {
+        // Returning drops the engine, so the platform cleans up (apps in
+        // the lane are hidden before the display goes away).
+        if stop.load(Ordering::SeqCst) {
+            let _ = std::fs::remove_file(&path);
+            return Ok(());
+        }
         let Ok(stream) = stream else { continue };
         if let Ok(mut last) = last_request.lock() {
             *last = None;
@@ -206,9 +214,9 @@ fn handle<P: Platform>(engine: &mut Engine<P>, stream: UnixStream, build: &str) 
     Handled::Served
 }
 
-/// Exits the process once no request came for `IDLE` since the last one
-/// finished.
-fn watch_idle(last_request: Arc<Mutex<Option<Instant>>>, path: PathBuf) {
+/// Stops the server once no request came for `IDLE` since the last one
+/// finished: it sets `stop` and wakes the accept loop with a connection.
+fn watch_idle(last_request: Arc<Mutex<Option<Instant>>>, stop: Arc<AtomicBool>, path: PathBuf) {
     thread::spawn(move || {
         loop {
             // A coarse timer: idleness is measured in minutes.
@@ -219,8 +227,9 @@ fn watch_idle(last_request: Arc<Mutex<Option<Instant>>>, path: PathBuf) {
                 .and_then(|last| last.map(|at| at.elapsed()))
                 .unwrap_or(Duration::ZERO);
             if idle >= IDLE {
-                let _ = std::fs::remove_file(&path);
-                std::process::exit(0);
+                stop.store(true, Ordering::SeqCst);
+                let _ = UnixStream::connect(&path);
+                return;
             }
         }
     });

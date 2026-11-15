@@ -9,6 +9,7 @@
 mod cli;
 mod daemon;
 mod platform;
+mod signals;
 
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -34,6 +35,10 @@ fn main() -> ExitCode {
     if args.is_empty() || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
         println!("{USAGE}{}", hush_core::step::SYNTAX);
         return ExitCode::SUCCESS;
+    }
+    if matches!(args[0].as_str(), "mcp" | "daemon") {
+        // Before any thread starts, so every thread inherits the mask.
+        signals::clean_up_on_exit(args[0] == "daemon");
     }
     let in_daemon = match args[0].as_str() {
         "mcp" | "daemon" => None,

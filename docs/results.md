@@ -90,11 +90,24 @@ answered before the popup's menu had closed (#39); the "hidden" seen earlier was
 fixture's Space settings; a fixture started as a child process can activate itself at launch, so
 the test now opens it through LaunchServices in the background.
 
+## The lane (15 Nov 2026)
+
+| Measured | Result |
+|---|---|
+| `lane` on the fixture, display created | 0.6 s; reusing the display 0.15 to 0.23 s |
+| A fixture Doorman had hidden | shown in the lane without activating; front app unchanged |
+| Click, scroll, capture in the lane | each click and scroll landed once; capture is the live window |
+| Chrome 156 (throwaway profile) moved to the lane | its page's accessibility tree appeared; before, on another Space, it was missing |
+| Typing into a Chrome input, textarea and contenteditable in the lane | landed; 0.09 to 0.11 s per `type` step, `cmd+a` 0.08 s |
+| `kill` of the daemon owning the lane | the parked app was hidden before the display went away |
+
+Chromium ignores Accessibility text inserts (it accepts the call and changes nothing), so typing
+into Chromium always uses keys in its synthetic key window. Every event Hush posts carries
+`kCGEventSourceUserData` = `0x48555348` ("HUSH"), so input watchers like Doorman can tell
+background-only input from input the user sees.
+
 ## Not measured yet
 
-- **Chromium typing on a real app.** A Chrome window on another Space or covered drops its page's
-  accessibility tree, so there is nothing to type into by ref; Chrome's switches that prevent
-  this only apply at launch, and Chrome activates itself at launch even with `open -g`.
 - **Cua Driver Bench v2.** Pass rate, model calls and median time for Hush need the bench running
   on macOS 27 and the owner's go-ahead. Until then the comparison above is Hush's fixed costs
   against others' published end-to-end results, which are different things.

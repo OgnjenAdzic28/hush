@@ -14,6 +14,8 @@ mod cf;
 #[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
+mod lane;
+#[cfg(target_os = "macos")]
 mod menu;
 #[cfg(target_os = "macos")]
 mod platform;
@@ -38,3 +40,10 @@ mod windows;
 pub use ax::Element;
 #[cfg(target_os = "macos")]
 pub use platform::MacPlatform;
+
+/// Hides the apps this process moved to the lane. For a process that is
+/// about to exit without dropping its platform (a signal).
+#[cfg(target_os = "macos")]
+pub fn release_lane() {
+    lane::release();
+}

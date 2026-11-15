@@ -4,7 +4,20 @@
 //! (a held Shift must not turn Hush's typing into capitals or shortcuts).
 
 use hush_core::{Key, KeyCombo, NamedKey};
-use objc2_core_graphics::{CGEvent, CGEventFlags, CGEventSource, CGEventSourceStateID};
+use objc2_core_graphics::{
+    CGEvent, CGEventField, CGEventFlags, CGEventSource, CGEventSourceStateID,
+};
+
+/// Every event Hush posts carries this in `kCGEventSourceUserData`
+/// (ASCII "HUSH"), so tools that watch input, such as Doorman, can tell
+/// input delivered only to a background process from input the user sees.
+pub(crate) const MARKER: i64 = 0x4855_5348;
+/// `kCGEventSourceUserData`.
+const SOURCE_USER_DATA: u32 = 42;
+
+pub(crate) fn mark(event: &CGEvent) {
+    CGEvent::set_integer_value_field(Some(event), CGEventField(SOURCE_USER_DATA), MARKER);
+}
 
 /// Characters per key event. CGEventKeyboardSetUnicodeString takes up to
 /// 20; a few less leaves room for surrogate pairs at a chunk's end.
@@ -65,6 +78,7 @@ fn flush(pid: i32, source: Option<&CGEventSource>, pending: &mut Vec<u16>) {
         unsafe {
             CGEvent::keyboard_set_unicode_string(Some(&event), pending.len() as _, pending.as_ptr())
         };
+        mark(&event);
         CGEvent::post_to_pid(pid, Some(&event));
     }
     pending.clear();
@@ -74,6 +88,7 @@ fn press(pid: i32, source: Option<&CGEventSource>, key_code: u16, flags: CGEvent
     for down in [true, false] {
         if let Some(event) = CGEvent::new_keyboard_event(source, key_code, down) {
             CGEvent::set_flags(Some(&event), flags);
+            mark(&event);
             CGEvent::post_to_pid(pid, Some(&event));
         }
     }

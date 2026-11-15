@@ -35,6 +35,7 @@ dependencies = [
  "hush-engine",
  "hush-macos",
  "hush-mcp",
+ "libc",
  "serde_json",
 ]
 

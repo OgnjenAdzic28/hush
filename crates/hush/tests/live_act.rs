@@ -36,7 +36,7 @@ impl Drop for Fixture {
     }
 }
 
-fn launch() -> Fixture {
+fn launch(visible: bool) -> Fixture {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bench/fixture/HushFixture.swift");
@@ -67,7 +67,13 @@ fn launch() -> Fixture {
     // Through LaunchServices in the background, the way agents open apps. A
     // child process started directly may activate itself at launch.
     let opened = Command::new("/usr/bin/open")
-        .args(["-g", "-n", "--env", "FIXTURE_VISIBLE=1", "-a"])
+        .args(["-g", "-n"])
+        .args(if visible {
+            &["--env", "FIXTURE_VISIBLE=1"][..]
+        } else {
+            &[][..]
+        })
+        .arg("-a")
         .arg(dir.join("HushFixture.app"))
         .arg("--args")
         .arg(&log)
@@ -102,7 +108,7 @@ fn front(engine: &Engine<MacPlatform>) -> Option<String> {
 fn every_route_lands_without_disturbing_the_user() {
     let mut engine = Engine::new(MacPlatform::new().expect("Accessibility permission"));
     let user_app = front(&engine);
-    let fixture = launch();
+    let fixture = launch(true);
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let outline = loop {
@@ -208,5 +214,64 @@ fn every_route_lands_without_disturbing_the_user() {
         acting.matches("UNHIDDEN").count() <= acting.matches("hidden\n").count(),
         "the fixture was unhidden while Hush acted"
     );
+    assert_eq!(front(&engine), user_app, "the user's front app changed");
+}
+
+#[test]
+#[ignore = "creates Hush's lane display and acts on a fixture there; needs the owner's go-ahead"]
+fn lane_makes_a_background_app_fully_usable() {
+    let mut engine = Engine::new(MacPlatform::new().expect("Accessibility permission"));
+    let user_app = front(&engine);
+    // Not told to show itself: if a lane tool hides it, `lane` must bring it
+    // back without activating it.
+    let fixture = launch(false);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while engine
+        .observe("HushFixture", ObserveOptions::default())
+        .is_err()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the fixture never became reachable"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let started = Instant::now();
+    let report = engine
+        .act("HushFixture", Some("Hush Fixture"), &["lane".to_owned()])
+        .expect("lane runs");
+    println!("{report}\n(lane took {:?})", started.elapsed());
+    assert!(!report.contains("stopped"), "lane failed: {report}");
+
+    let steps = [
+        "click 240,342".to_owned(),
+        "scroll 240,342 down 2".to_owned(),
+    ];
+    let report = engine
+        .act("HushFixture", Some("Hush Fixture"), &steps)
+        .expect("act runs");
+    println!("{report}");
+    let shot = engine
+        .see("HushFixture", Some("Hush Fixture"), None, 480)
+        .expect("see runs");
+    assert!(
+        shot.jpeg.len() > 6000,
+        "the capture looks empty ({} bytes)",
+        shot.jpeg.len()
+    );
+
+    std::thread::sleep(Duration::from_millis(200));
+    let log = std::fs::read_to_string(&fixture.log).expect("fixture log");
+    println!("fixture log:\n{log}");
+    assert!(
+        log.contains("canvas click 1"),
+        "the click in the lane didn't land"
+    );
+    assert!(!log.contains("canvas click 2"), "the click landed twice");
+    assert!(
+        log.contains("canvas scroll"),
+        "the scroll in the lane didn't land"
+    );
+    assert!(!log.contains("ACTIVATED"), "the fixture was activated");
     assert_eq!(front(&engine), user_app, "the user's front app changed");
 }
