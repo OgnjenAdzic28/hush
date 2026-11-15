@@ -113,13 +113,6 @@ impl Element {
             .map(|v| elements_of(&v))
             .unwrap_or_default()
     }
-
-    pub(crate) fn pid(&self) -> Option<i32> {
-        let mut pid = 0;
-        // SAFETY: valid out-pointer.
-        let status = unsafe { self.0.pid(NonNull::from(&mut pid)) };
-        (status == AXError::Success).then_some(pid)
-    }
 }
 
 /// The elements in an array value (AXChildren, AXWindows, AXVisibleRows).

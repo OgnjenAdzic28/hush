@@ -1,11 +1,12 @@
 //! `hush_core::Platform` for macOS.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use hush_core::{
-    Activity, AppInfo, Error, Image, Op, Platform, Rect, Result, ScriptLanguage, Snapshot,
-    WindowInfo,
+    Activity, AppInfo, Error, Image, Op, Platform, Poll, Rect, Result, Rules, ScriptLanguage,
+    Settle, Snapshot, WindowInfo,
 };
 
 use crate::ax::{self, Element};
@@ -24,6 +25,8 @@ pub struct MacPlatform {
     /// Window elements by window id, refreshed on every `windows` call.
     windows: RefCell<HashMap<u64, Element>>,
     scripts: RefCell<Scripts>,
+    /// Chromium and Electron apps whose web content was switched on.
+    web_enabled: RefCell<HashSet<i32>>,
 }
 
 impl MacPlatform {
@@ -42,6 +45,7 @@ impl MacPlatform {
             watcher: Watcher::start(),
             windows: RefCell::default(),
             scripts: RefCell::default(),
+            web_enabled: RefCell::default(),
         })
     }
 
@@ -50,6 +54,46 @@ impl MacPlatform {
             .pid
             .ok_or_else(|| Error::NotFound(format!("{} isn't running", app.name)))?;
         Ok(Element::application(pid as i32))
+    }
+
+    /// Chromium and Electron build the accessibility tree of their web
+    /// content only for assistive apps that ask for it, so a first read sees
+    /// little more than the window buttons. `AXManualAccessibility` asks for
+    /// it without the side effect of `AXEnhancedUserInterface` (window moves
+    /// by other tools animate). The tree builds asynchronously; this waits
+    /// until its creation events stop.
+    fn enable_web_content(&self, app: &AppInfo) {
+        let (Some(pid), Some(path)) = (app.pid, app.path.as_deref()) else {
+            return;
+        };
+        let pid = pid as i32;
+        if !self.web_enabled.borrow_mut().insert(pid)
+            || !act::is_chromium(std::path::Path::new(path))
+        {
+            return;
+        }
+        self.watcher.watch(pid);
+        let before = self.watcher.activity(pid);
+        // Chromium Embedded Framework apps (Spotify) only know the older
+        // switch, so it is the fallback.
+        let app_element = Element::application(pid);
+        if act::set_flag(&app_element, "AXManualAccessibility").is_err()
+            && act::set_flag(&app_element, "AXEnhancedUserInterface").is_err()
+        {
+            return;
+        }
+        let rules = Rules {
+            reaction: Duration::from_millis(300),
+            quiet: Duration::from_millis(60),
+            limit: Duration::from_millis(1500),
+        };
+        let mut settle = Settle::begin(Instant::now(), before, rules);
+        while let Poll::WaitUntil(at) = settle.poll(Instant::now(), self.watcher.activity(pid)) {
+            std::thread::sleep(
+                at.saturating_duration_since(Instant::now())
+                    .min(Duration::from_millis(5)),
+            );
+        }
     }
 
     fn window_element(&self, app: &AppInfo, window: &WindowInfo) -> Result<Element> {
@@ -86,6 +130,7 @@ impl Platform for MacPlatform {
     }
 
     fn windows(&self, app: &AppInfo) -> Result<Vec<WindowInfo>> {
+        self.enable_web_content(app);
         let listed = windows::list(&Self::app_element(app)?);
         let mut cache = self.windows.borrow_mut();
         cache.clear();

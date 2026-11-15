@@ -67,6 +67,11 @@ pub(crate) fn perform_action(element: &Element, action: &str) -> Result<()> {
     }
 }
 
+/// Sets a boolean attribute to true.
+pub(crate) fn set_flag(element: &Element, attribute: &str) -> Result<()> {
+    set(element, attribute, CFBoolean::new(true))
+}
+
 fn set(element: &Element, attribute: &str, value: &CFType) -> Result<()> {
     let name = cf::cfstr(attribute);
     // SAFETY: setting an attribute on a live element with a CF value.
@@ -148,14 +153,12 @@ fn type_text(
         }
         None => app_element.element("AXFocusedUIElement"),
     };
-    if let Some(target) = &target {
-        let before = target.string("AXValue");
-        if set(target, "AXSelectedText", &CFString::from_str(text)).is_ok() {
-            let after = target.string("AXValue");
-            if after.is_some() && after != before {
-                return Ok(());
-            }
-        }
+    // An app that accepted the insert has the text, even if its value
+    // updates a moment later; typing it again as keys would double it.
+    if let Some(target) = &target
+        && set(target, "AXSelectedText", &CFString::from_str(text)).is_ok()
+    {
+        return Ok(());
     }
     refuse_keys_for_chromium(app)?;
     keys::post_text(pid, text);
