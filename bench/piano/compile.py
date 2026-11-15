@@ -5,7 +5,9 @@ virtualpiano.net: white keys C1..C6 are "1234567890qwertyuiopasdfghjklzxcvbnm"; 
 Shift plus the white key just below it. The sustain pedal (CC64) is honored by holding notes until
 it lifts, as a pianist's pedal would. Notes outside C1..C6 move by octaves into range.
 
-Usage: compile.py IN.mid OUT.txt [--from-ms N] [--to-ms N]
+Usage: compile.py IN.mid OUT.txt [--from-ms N] [--to-ms N] [--track NAME] [--list]
+--track keeps only tracks whose name contains NAME (several, comma-separated) (tempo still applies); drums (channel 10) are
+always left out. --list prints each track's name and note count.
 Writes one event per line ("MS down KEY" / "MS up KEY") and prints a summary.
 """
 
@@ -33,8 +35,10 @@ def read_midi(path):
     assert data[:4] == b"MThd"
     _, _, ntracks, division = struct.unpack(">IHHH", data[4:14])
     pos = 14
-    events = []  # (tick, kind, a, b)
-    for _ in range(ntracks):
+    events = []  # (tick, kind, a, b, track)
+    names = []
+    for track_index in range(ntracks):
+        names.append("")
         assert data[pos:pos + 4] == b"MTrk"
         (length,) = struct.unpack(">I", data[pos + 4:pos + 8])
         track = data[pos + 8:pos + 8 + length]
@@ -58,7 +62,9 @@ def read_midi(path):
                 payload = track[i + 2:i + 2 + length]
                 i += 2 + length
                 if kind == 0x51:
-                    events.append((tick, "tempo", int.from_bytes(payload, "big"), 0))
+                    events.append((tick, "tempo", int.from_bytes(payload, "big"), 0, track_index))
+                elif kind == 0x03:
+                    names[track_index] = payload.decode("latin-1").strip()
             elif status in (0xF0, 0xF7):
                 length = track[i]
                 i += 1 + length
@@ -67,21 +73,23 @@ def read_midi(path):
                 a = track[i]
                 b = track[i + 1] if high not in (0xC0, 0xD0) else 0
                 i += 1 if high in (0xC0, 0xD0) else 2
+                if (status & 0x0F) == 9:
+                    continue  # drums
                 if high == 0x90 and b > 0:
-                    events.append((tick, "on", a, b))
+                    events.append((tick, "on", a, b, track_index))
                 elif high == 0x80 or (high == 0x90 and b == 0):
-                    events.append((tick, "off", a, 0))
+                    events.append((tick, "off", a, 0, track_index))
                 elif high == 0xB0 and a == 64:
-                    events.append((tick, "pedal", b, 0))
+                    events.append((tick, "pedal", b, 0, track_index))
     order = {"tempo": 0, "off": 1, "pedal": 2, "on": 3}
     events.sort(key=lambda e: (e[0], order[e[1]]))
-    return division, events
+    return division, events, names
 
 
 def to_ms(division, events):
     tempo, last_tick, ms = 500000, 0, 0.0
     out = []
-    for tick, kind, a, b in events:
+    for tick, kind, a, b, _ in events:
         ms += (tick - last_tick) * tempo / division / 1000
         last_tick = tick
         if kind == "tempo":
@@ -137,7 +145,16 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     start = float(args[args.index("--from-ms") + 1]) if "--from-ms" in args else 0.0
     end = float(args[args.index("--to-ms") + 1]) if "--to-ms" in args else float("inf")
-    division, events = read_midi(args[0])
+    division, events, names = read_midi(args[0])
+    if "--list" in args:
+        for i, name in enumerate(names):
+            notes = sum(1 for e in events if e[4] == i and e[1] == "on")
+            print(f"track {i}: {name!r}, {notes} notes")
+        sys.exit(0)
+    if "--track" in args:
+        wanted = [w.strip() for w in args[args.index("--track") + 1].lower().split(",")]
+        keep = {i for i, name in enumerate(names) if any(w in name.lower() for w in wanted)}
+        events = [e for e in events if e[1] == "tempo" or e[4] in keep]
     timed = to_ms(division, events)
     lines = compile_timeline(timed, start, end)
     open(args[1], "w").write("\n".join(lines) + "\n")

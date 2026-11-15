@@ -34,7 +34,7 @@ let hooks = """
       recorder.ondataavailable = e => entry.chunks.push(e.data);
       recorder.start(1000);
       taps.set(ctx, entry);
-      webkit.messageHandlers.hush.postMessage({ kind: 'recording', context: entry.index, state: ctx.state, rate: ctx.sampleRate });
+      webkit.messageHandlers.hush.postMessage({ kind: 'recording', context: entry.index, state: ctx.state, rate: ctx.sampleRate, t: performance.timeOrigin + performance.now() });
     }
     return entry;
   }
