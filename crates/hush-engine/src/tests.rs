@@ -178,7 +178,10 @@ impl Platform for Fake {
     ) -> Result<hush_core::Played> {
         let first = events.first().map(|e| e.input);
         let last = events.last().map(|e| e.input);
-        self.changed(format!("Play {} events {first:?} .. {last:?}", events.len()));
+        self.changed(format!(
+            "Play {} events {first:?} .. {last:?}",
+            events.len()
+        ));
         Ok(hush_core::Played::default())
     }
 
@@ -399,7 +402,10 @@ fn drag_plays_a_press_glide_and_release_between_the_two_elements() {
         .unwrap();
     assert!(report.contains("dragged"), "{report}");
     let ops = engine.platform().ops();
-    let play = ops.iter().find(|op| op.starts_with("Play")).expect("a drag plays a timeline");
+    let play = ops
+        .iter()
+        .find(|op| op.starts_with("Play"))
+        .expect("a drag plays a timeline");
     // Every element of the fake sits at 10,10 sized 100x20: its center is 60,20.
     assert!(play.contains("PointerDown { x: 60.0, y: 20.0"), "{play}");
     assert!(play.contains("PointerUp { x: 300.0, y: 200.0"), "{play}");
