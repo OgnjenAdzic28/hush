@@ -2,3 +2,4 @@ target/
 .DS_Store
 bench/axbench
 bench/capbench
+__pycache__/
