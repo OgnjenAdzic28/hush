@@ -241,3 +241,63 @@ pub(crate) fn macos_major() -> u32 {
             .unwrap_or(0)
     })
 }
+
+// ---------------------------------------------------------------------------
+// Windows on other Spaces.
+
+type CreateWithToken = unsafe extern "C" fn(CfRef) -> *mut AXUIElement;
+
+/// Accessibility elements for windows of `pid` whose window ids are in
+/// `wanted`, found by building elements from remote tokens.
+///
+/// AXWindows lists only the windows on the current Space (macOS 27.2), so a
+/// window on another Desktop, or behind a full-screen app, is invisible to
+/// it. An element can be made from a 20-byte token (pid, 0, "coco", element
+/// id); window elements have small ids, so ids are tried in order until every
+/// wanted window is found. The technique and token layout come from
+/// alt-tab-macos (GPL, technique only). Measured here: a full scan of 1,000
+/// ids takes 34 to 88 ms, and windows were found at ids 42 and 61.
+pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> {
+    static FUNCTION: OnceLock<Option<CreateWithToken>> = OnceLock::new();
+    // SAFETY: the symbol takes a CFData and returns a +1 AXUIElement or null.
+    let Some(create) = *FUNCTION.get_or_init(|| unsafe {
+        function(APPLICATION_SERVICES, c"_AXUIElementCreateWithRemoteToken")
+    }) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for element_id in 0u64..1000 {
+        if found.len() == wanted.len() {
+            break;
+        }
+        let mut token = [0u8; 20];
+        token[0..4].copy_from_slice(&pid.to_le_bytes());
+        token[8..12].copy_from_slice(&0x636f_636f_u32.to_le_bytes());
+        token[12..20].copy_from_slice(&element_id.to_le_bytes());
+        // SAFETY: CFDataCreate copies the bytes; the data is released below.
+        let element = unsafe {
+            let data = CFDataCreate(std::ptr::null_mut(), token.as_ptr(), token.len() as isize);
+            let raw = create(data);
+            CFRelease(data);
+            match std::ptr::NonNull::new(raw) {
+                Some(raw) => Element::from_raw(objc2_core_foundation::CFRetained::from_raw(raw)),
+                None => continue,
+            }
+        };
+        if element.string("AXRole").as_deref() != Some("AXWindow") {
+            continue;
+        }
+        if let Some(id) = window_id(&element)
+            && wanted.contains(&id)
+            && !found.iter().any(|(known, _)| *known == id)
+        {
+            found.push((id, element));
+        }
+    }
+    found
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFDataCreate(allocator: CfRef, bytes: *const u8, length: isize) -> CfRef;
+}
