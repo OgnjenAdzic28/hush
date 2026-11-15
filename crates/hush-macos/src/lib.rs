@@ -8,6 +8,8 @@ mod apps;
 #[cfg(target_os = "macos")]
 mod ax;
 #[cfg(target_os = "macos")]
+mod capture;
+#[cfg(target_os = "macos")]
 mod cf;
 #[cfg(target_os = "macos")]
 mod keys;
@@ -15,6 +17,8 @@ mod keys;
 mod menu;
 #[cfg(target_os = "macos")]
 mod platform;
+#[cfg(target_os = "macos")]
+mod pointer;
 #[cfg(target_os = "macos")]
 mod private;
 #[cfg(target_os = "macos")]

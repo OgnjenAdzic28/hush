@@ -12,7 +12,7 @@ use hush_core::{
 use crate::ax::{self, Element};
 use crate::script::{self, Scripts};
 use crate::watch::Watcher;
-use crate::{act, apps, read, windows};
+use crate::{act, apps, capture, read, windows};
 
 /// How long one accessibility call may block on an app that isn't
 /// answering. Long enough for a busy app, short enough that a hung one
@@ -162,19 +162,21 @@ impl Platform for MacPlatform {
         }
     }
 
-    fn perform(&self, app: &AppInfo, _window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
-        act::perform(app, op)
+    fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
+        let window_element = self.window_element(app, window)?;
+        let target = act::Target {
+            app,
+            window,
+            window_element: &window_element,
+        };
+        act::perform(&target, op)
     }
 
-    fn capture(
-        &self,
-        _window: &WindowInfo,
-        _region: Option<Rect>,
-        _max_width: u32,
-    ) -> Result<Image> {
-        Err(Error::Unsupported(
-            "screenshots on macOS aren't built yet".into(),
-        ))
+    fn capture(&self, window: &WindowInfo, region: Option<Rect>, max_width: u32) -> Result<Image> {
+        let id = u32::try_from(window.id).map_err(|_| {
+            Error::Unsupported("this window has no window-server id to capture".into())
+        })?;
+        capture::window(id, window.frame, region, max_width)
     }
 
     fn script(&self, _app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String> {
