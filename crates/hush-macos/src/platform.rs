@@ -9,8 +9,9 @@ use hush_core::{
 };
 
 use crate::ax::{self, Element};
+use crate::script::{self, Scripts};
 use crate::watch::Watcher;
-use crate::{apps, read, windows};
+use crate::{act, apps, read, windows};
 
 /// How long one accessibility call may block on an app that isn't
 /// answering. Long enough for a busy app, short enough that a hung one
@@ -22,6 +23,7 @@ pub struct MacPlatform {
     watcher: Watcher,
     /// Window elements by window id, refreshed on every `windows` call.
     windows: RefCell<HashMap<u64, Element>>,
+    scripts: RefCell<Scripts>,
 }
 
 impl MacPlatform {
@@ -39,6 +41,7 @@ impl MacPlatform {
         Ok(MacPlatform {
             watcher: Watcher::start(),
             windows: RefCell::default(),
+            scripts: RefCell::default(),
         })
     }
 
@@ -114,10 +117,8 @@ impl Platform for MacPlatform {
         }
     }
 
-    fn perform(&self, _app: &AppInfo, _window: &WindowInfo, _op: Op<'_, Element>) -> Result<()> {
-        Err(Error::Unsupported(
-            "acting on macOS apps isn't built yet".into(),
-        ))
+    fn perform(&self, app: &AppInfo, _window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
+        act::perform(app, op)
     }
 
     fn capture(
@@ -131,9 +132,10 @@ impl Platform for MacPlatform {
         ))
     }
 
-    fn script(&self, _app: &AppInfo, _source: &str, _language: ScriptLanguage) -> Result<String> {
-        Err(Error::Unsupported(
-            "scripts on macOS aren't built yet".into(),
-        ))
+    fn script(&self, _app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String> {
+        match language {
+            ScriptLanguage::AppleScript => self.scripts.borrow_mut().apple_script(source),
+            ScriptLanguage::JavaScript => script::javascript(source),
+        }
     }
 }
