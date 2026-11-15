@@ -107,11 +107,7 @@ pub(crate) fn window(
                 .into(),
         ));
     }
-    let image = Owned(private::capture_window(window_id).ok_or_else(|| {
-        Error::Failed(
-            "the window server returned no image for this window (is it minimized?)".into(),
-        )
-    })?);
+    let image = Owned(picture(window_id)?);
     // SAFETY: `image` is a live CGImage for the rest of this function.
     unsafe {
         let (full_w, full_h) = (CGImageGetWidth(image.0), CGImageGetHeight(image.0));
@@ -167,14 +163,33 @@ pub(crate) fn with_picture<T>(
                 .into(),
         ));
     }
-    let image = Owned(
-        private::capture_window(window_id)
-            .ok_or_else(|| Error::Failed("the window server returned no image".into()))?,
-    );
+    let image = Owned(picture(window_id)?);
     // SAFETY: `image` is a live CGImage; the gray copy lives until the end.
     unsafe {
         let gray = gray_with_contrast(image.0, width, height)?;
         Ok(read(&*gray.0.cast::<objc2_core_graphics::CGImage>()))
+    }
+}
+
+/// The window's picture, a +1 CGImage.
+fn picture(window_id: u32) -> Result<Ref> {
+    match private::capture_window(window_id) {
+        private::Capture::Image(image) => Ok(image),
+        private::Capture::Nothing => Err(Error::Failed(
+            "the window server returned no image for this window (is it minimized or hidden? \
+             a lane step shows it)"
+                .into(),
+        )),
+        private::Capture::Blocked => {
+            let exe = std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "hush".into());
+            Err(Error::Permission(format!(
+                "macOS held this process's request to read windows for a Screen Recording decision. \
+                 Turn on Screen Recording for {exe} (add it with + if it isn't listed) in System \
+                 Settings > Privacy & Security > Screen & System Audio Recording, then start it again"
+            )))
+        }
     }
 }
 

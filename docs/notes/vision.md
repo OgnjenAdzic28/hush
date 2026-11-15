@@ -35,6 +35,19 @@ Limits: clip names on a timeline's colored blocks still come out misspelled or m
 ("OcearLSunset.mp"). Icons have no text, and recognition can read a label differently from one
 read to the next, which shows up as a change in the diff.
 
+## Screen Recording when an agent starts Hush
+
+Claude Code starts an MCP server as its own responsible process, so macOS checks Screen Recording
+for the `hush` binary itself, not for the terminal or app the agent runs in. Without a grant of its
+own, the window server holds the capture request in `SLSHWCaptureWindowListToIOSurfaceProxying`
+indefinitely. Hush now gives up after 2 s, fails every capture for the next minute straight away,
+and says which binary needs Screen Recording. `observe` adds one line saying the pixels can't be
+read. Accessibility isn't affected.
+
+The grant is tied to the binary's code signature, and a build that is only ad-hoc signed gets a new
+one each time it is rebuilt. Grant it to a copy that doesn't change (an installed `hush`), not to
+`target/release/hush`.
+
 ## Screen Recording and the binary's path
 
 Reading pixels needs Screen Recording for the app running Hush. On the owner's Mac,

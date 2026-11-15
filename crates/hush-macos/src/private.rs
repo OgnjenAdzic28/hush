@@ -184,8 +184,60 @@ fn activation_record(window: u32, focused: bool) -> [u8; 0xF8] {
     record
 }
 
-/// A +1 CGImage of the window's backing store, or `None`.
-pub(crate) fn capture_window(window: u32) -> Option<CfRef> {
+/// What asking the window server for a window's picture gave.
+pub(crate) enum Capture {
+    /// A +1 CGImage of the window's backing store.
+    Image(CfRef),
+    /// No picture (a minimized or closed window).
+    Nothing,
+    /// macOS held the request for a Screen Recording decision that never came.
+    Blocked,
+}
+
+/// Longest a capture may take. One takes 15 to 33 ms; a process without a
+/// Screen Recording grant of its own (an MCP server Claude Code started is
+/// its own responsible process) waits in
+/// `SLSHWCaptureWindowListToIOSurfaceProxying` with no end.
+const CAPTURE_LIMIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Once a capture was held, later ones fail at once instead of piling up
+/// held threads: until this instant.
+static BLOCKED_UNTIL: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+pub(crate) fn capture_window(window: u32) -> Capture {
+    let now = std::time::Instant::now();
+    if BLOCKED_UNTIL
+        .lock()
+        .ok()
+        .and_then(|until| *until)
+        .is_some_and(|until| now < until)
+    {
+        return Capture::Blocked;
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    // The image crosses threads as an address: CGImages are immutable and
+    // safe to use from any thread.
+    let spawned = std::thread::Builder::new()
+        .name("hush-capture".into())
+        .spawn(move || {
+            let _ = sender.send(capture_now(window).map(|image| image as usize));
+        });
+    if spawned.is_err() {
+        return Capture::Nothing;
+    }
+    match receiver.recv_timeout(CAPTURE_LIMIT) {
+        Ok(Some(image)) => Capture::Image(image as CfRef),
+        Ok(None) => Capture::Nothing,
+        Err(_) => {
+            if let Ok(mut until) = BLOCKED_UNTIL.lock() {
+                *until = Some(now + std::time::Duration::from_secs(60));
+            }
+            Capture::Blocked
+        }
+    }
+}
+
+fn capture_now(window: u32) -> Option<CfRef> {
     let api = skylight()?;
     // 0x800: ignore the global clip shape, so covered parts are included.
     // SAFETY: one valid window id; the result is a +1 CFArray or null.
