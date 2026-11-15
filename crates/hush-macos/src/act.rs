@@ -145,6 +145,17 @@ fn set_value(element: &Element, value: &str) -> Result<()> {
     if direct.is_ok() && reads_back(element, value) {
         return Ok(());
     }
+    // Replacing through the selection focuses the element, which only makes
+    // sense for text; elsewhere it would just move the app's focus.
+    let role = element.string("AXRole").unwrap_or_default();
+    if !matches!(
+        role.as_str(),
+        "AXTextField" | "AXTextArea" | "AXComboBox" | "AXSearchField"
+    ) {
+        return direct.and(Err(Error::Failed(
+            "the app didn't keep the new value".into(),
+        )));
+    }
     let length = element
         .string("AXValue")
         .map_or(0, |v| v.encode_utf16().count());
