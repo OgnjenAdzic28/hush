@@ -54,6 +54,23 @@ pub(crate) fn with_pixels(snapshot: Snapshot<Element>, window: &WindowInfo) -> S
     let thin = meaningful < THIN && info.frame.w * info.frame.h >= MIN_AREA;
     if thin && !nodes.is_empty() {
         let result = u32::try_from(window.id).map(|id| vision::read(id, info.frame));
+        if let Ok(Err(hush_core::Error::Permission(_))) = &result {
+            // Say why the window looks empty; `see` gives the whole message.
+            nodes.push(Node {
+                handle: Handle::Seen(0),
+                role: Role::Text,
+                name:
+                    "(this window draws its own interface, and Screen Recording is off for Hush, \
+                       so its pixels can't be read; see explains)"
+                        .into(),
+                value: None,
+                frame: None,
+                states: States::default(),
+                actions: Actions::default(),
+                parent: Some(0),
+                unread: 0,
+            });
+        }
         if let Ok(Ok(labels)) = result {
             for label in labels {
                 let duplicate = nodes.iter().any(|n| {
