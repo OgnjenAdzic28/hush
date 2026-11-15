@@ -90,8 +90,9 @@ hush act Notes "click b2" "type t1 \"Groceries\"" "key enter"
 hush see Notes --out notes.jpg
 ```
 
-Each shell command starts fresh, so refs carry over between commands only while the window
-doesn't change; MCP sessions keep state and answer with diffs.
+Shell commands share one background `hush daemon` per user, started by the first command and
+gone after 10 idle minutes, so refs carry over and repeat looks answer with diffs, as in an MCP
+session. Set `HUSH_NO_DAEMON=1` to run each command in its own process instead.
 
 ## Platforms
 

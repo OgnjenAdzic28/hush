@@ -26,6 +26,7 @@ cargo test -p hush-mcp the_tool_definitions_stay_small -- --nocapture        # s
 | AppleScript in process | 103 ms the first time (compile), then 17 µs per run |
 | Tool definitions sent with every request | 562 tokens for all five tools |
 | CLI end to end (`hush apps`, including process start and permission check) | 73 ms |
+| CLI repeat `observe` of an unchanged window, through the daemon | 10 ms, answered "no change" |
 
 ## Published: the field (Aug to Nov 2026)
 

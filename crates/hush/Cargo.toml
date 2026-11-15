@@ -15,6 +15,7 @@ path = "src/main.rs"
 hush-core = { path = "../hush-core" }
 hush-engine = { path = "../hush-engine" }
 hush-mcp = { path = "../hush-mcp" }
+serde_json = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 hush-macos = { path = "../hush-macos" }
