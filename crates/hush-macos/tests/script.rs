@@ -45,7 +45,9 @@ fn applescript_runs_in_process_and_repeats_without_recompiling() {
         .unwrap_err();
     assert!(broken.to_string().contains("doesn't compile"), "{broken}");
     // A runtime error is an error result, not a crash.
-    let failed = platform.script(&none(), "error \"boom\"", ScriptLanguage::AppleScript).unwrap_err();
+    let failed = platform
+        .script(&none(), "error \"boom\"", ScriptLanguage::AppleScript)
+        .unwrap_err();
     assert!(failed.to_string().contains("boom"), "{failed}");
     assert_eq!(
         platform
