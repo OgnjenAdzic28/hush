@@ -11,6 +11,7 @@ use hush_core::{
 
 use crate::ax::{self, Element};
 use crate::script::{self, Scripts};
+use crate::seen::{self, Handle};
 use crate::watch::Watcher;
 use crate::{act, apps, capture, cf, play, read, windows};
 
@@ -130,7 +131,7 @@ impl Drop for MacPlatform {
 }
 
 impl Platform for MacPlatform {
-    type Handle = Element;
+    type Handle = Handle;
 
     fn apps(&self, query: Option<&str>) -> Result<Vec<AppInfo>> {
         let mut found = apps::running();
@@ -175,13 +176,16 @@ impl Platform for MacPlatform {
             .collect())
     }
 
-    fn read(&self, app: &AppInfo, window: &WindowInfo) -> Result<Snapshot<Element>> {
+    fn read(&self, app: &AppInfo, window: &WindowInfo) -> Result<Snapshot<Handle>> {
         let element = self.window_element(app, window)?;
         if let Some(pid) = app.pid {
             self.watcher.watch(pid as i32);
         }
         let menus = read::menu_titles(&Self::app_element(app)?);
-        Ok(read::window(app, window, &element, menus))
+        Ok(seen::with_pixels(
+            read::window(app, window, &element, menus),
+            window,
+        ))
     }
 
     fn activity(&self, app: &AppInfo) -> Activity {
@@ -194,7 +198,7 @@ impl Platform for MacPlatform {
         }
     }
 
-    fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
+    fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Handle>) -> Result<()> {
         if matches!(op, Op::Lane) {
             let pid = app
                 .pid
@@ -216,7 +220,7 @@ impl Platform for MacPlatform {
             window,
             window_element: &window_element,
         };
-        act::perform(&target, op)
+        act::perform(&target, seen::to_ax(op)?)
     }
 
     fn capture(&self, window: &WindowInfo, region: Option<Rect>, max_width: u32) -> Result<Image> {

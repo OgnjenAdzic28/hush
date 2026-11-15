@@ -95,6 +95,9 @@ pub enum Role {
     Text,
     Image,
     Progress,
+    /// A label read from the window's pixels (an app that draws its own
+    /// interface): pointer steps work on it at its place, nothing else.
+    Seen,
     Other,
 }
 
@@ -141,6 +144,7 @@ impl Role {
             Text => "text",
             Image => "image",
             Progress => "progress",
+            Seen => "seen",
             Other => "other",
         }
     }
@@ -156,6 +160,7 @@ impl Role {
             MenuBar | Menu | MenuItem => b'm',
             Row | Cell | Column => b'i',
             Link => b'l',
+            Seen => b'v',
             _ => b'e',
         }
     }

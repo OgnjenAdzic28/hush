@@ -32,7 +32,11 @@ mod roles;
 #[cfg(target_os = "macos")]
 mod script;
 #[cfg(target_os = "macos")]
+mod seen;
+#[cfg(target_os = "macos")]
 mod server;
+#[cfg(target_os = "macos")]
+mod vision;
 #[cfg(target_os = "macos")]
 mod watch;
 #[cfg(target_os = "macos")]
@@ -42,6 +46,8 @@ mod windows;
 pub use ax::Element;
 #[cfg(target_os = "macos")]
 pub use platform::MacPlatform;
+#[cfg(target_os = "macos")]
+pub use seen::Handle;
 
 /// Hides the apps this process moved to the lane. For a process that is
 /// about to exit without dropping its platform (a signal).

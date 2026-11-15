@@ -35,7 +35,9 @@ pub(crate) fn list() -> Value {
         {
             "name": "observe",
             "description": "Outline of an app's window: one line per element, each with a ref like b3 or t1 \
-                for act. Later calls return only what changed. Long parts are folded; pass focus to open one.",
+                for act. Later calls return only what changed. Long parts are folded; pass focus to open one. \
+                In apps that draw their own interface, labels read from the pixels appear as `seen` (v refs): \
+                click or drag them.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
