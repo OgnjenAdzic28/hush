@@ -47,9 +47,17 @@ pub(crate) fn list(
 ) -> Vec<(WindowInfo, Element)> {
     let mut elements = app.elements("AXWindows");
     let listed: Vec<u32> = elements.iter().filter_map(private::window_id).collect();
-    let on_server: Vec<u32> = server::windows(Which::All)
+    let server_windows: Vec<_> = server::windows(Which::All)
         .into_iter()
         .filter(|w| w.pid == pid && w.is_document_sized())
+        .collect();
+    let on_server: Vec<u32> = server_windows.iter().map(|w| w.id).collect();
+    // Only titled windows are searched for: the server also lists untitled
+    // helper surfaces (Electron's 500x500 placeholders, panels) that have no
+    // element, and searching for those cost every call the whole scan.
+    let titled: Vec<u32> = server_windows
+        .iter()
+        .filter(|w| w.titled)
         .map(|w| w.id)
         .collect();
     known.retain(|(owner, id), _| *owner != pid || on_server.contains(id));
@@ -62,7 +70,7 @@ pub(crate) fn list(
     for id in on_server.iter().filter(|id| !listed.contains(id)) {
         match known.get(&(pid, *id)) {
             Some(element) => elements.push(element.clone()),
-            None if !recently_unreachable(pid, *id) => missing.push(*id),
+            None if titled.contains(id) && !recently_unreachable(pid, *id) => missing.push(*id),
             None => {}
         }
     }

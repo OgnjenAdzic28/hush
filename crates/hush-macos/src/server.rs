@@ -4,7 +4,7 @@
 use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType};
 use objc2_core_graphics::{
     CGWindowListCopyWindowInfo, CGWindowListOption, kCGNullWindowID, kCGWindowBounds,
-    kCGWindowLayer, kCGWindowNumber, kCGWindowOwnerPID,
+    kCGWindowLayer, kCGWindowName, kCGWindowNumber, kCGWindowOwnerPID,
 };
 
 use crate::cf;
@@ -15,6 +15,8 @@ pub(crate) struct ServerWindow {
     pub(crate) pid: i32,
     pub(crate) width: f64,
     pub(crate) height: f64,
+    /// Has a title. Untitled ones are mostly an app's helper surfaces.
+    pub(crate) titled: bool,
 }
 
 impl ServerWindow {
@@ -47,12 +49,13 @@ pub(crate) fn windows(which: Which) -> Vec<ServerWindow> {
     let list: CFRetained<CFArray<CFDictionary<CFString, CFType>>> =
         unsafe { CFRetained::cast_unchecked(list) };
     // SAFETY: framework constants that are always set.
-    let (pid_key, layer_key, number_key, bounds_key) = unsafe {
+    let (pid_key, layer_key, number_key, bounds_key, name_key) = unsafe {
         (
             kCGWindowOwnerPID,
             kCGWindowLayer,
             kCGWindowNumber,
             kCGWindowBounds,
+            kCGWindowName,
         )
     };
     list.iter()
@@ -76,6 +79,10 @@ pub(crate) fn windows(which: Which) -> Vec<ServerWindow> {
                 pid: number(pid_key)? as i32,
                 width: side("Width"),
                 height: side("Height"),
+                titled: window
+                    .get(name_key)
+                    .and_then(|v| cf::string(&v))
+                    .is_some_and(|name| !name.is_empty()),
             })
         })
         .collect()

@@ -253,12 +253,23 @@ type CreateWithToken = unsafe extern "C" fn(CfRef) -> *mut AXUIElement;
 /// AXWindows lists only the windows on the current Space (macOS 27.2), so a
 /// window on another Desktop, or behind a full-screen app, is invisible to
 /// it. An element can be made from a 20-byte token (pid, 0, "coco", element
-/// id); window elements have small ids, so ids are tried in order until every
-/// wanted window is found. The technique and token layout come from
-/// alt-tab-macos (GPL, technique only). Measured here: a full scan of 1,000
-/// ids takes 34 to 88 ms, and windows were found at ids 42 and 61.
+/// id) without asking the app; ids are tried until every wanted window is
+/// found. The technique and token layout come from alt-tab-macos (GPL,
+/// technique only). Most windows have small ids (found at 42 and 61 here),
+/// so the first ids are always tried; a long-running app hands out ids in
+/// the thousands, so each call also continues a scan up to yabai's bound
+/// for a bounded time, resuming where the last call stopped. Measured: 1,000
+/// ids take 34 to 88 ms.
 pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> {
+    /// Always tried.
+    const FIRST: u64 = 1000;
+    /// yabai's bound for the scan.
+    const LAST: u64 = 0x8000;
+    /// How long one call may spend past the first ids.
+    const BUDGET: std::time::Duration = std::time::Duration::from_millis(100);
     static FUNCTION: OnceLock<Option<CreateWithToken>> = OnceLock::new();
+    static CURSORS: OnceLock<std::sync::Mutex<std::collections::HashMap<i32, u64>>> =
+        OnceLock::new();
     // SAFETY: the symbol takes a CFData and returns a +1 AXUIElement or null.
     let Some(create) = *FUNCTION.get_or_init(|| unsafe {
         function(APPLICATION_SERVICES, c"_AXUIElementCreateWithRemoteToken")
@@ -266,10 +277,7 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
         return Vec::new();
     };
     let mut found = Vec::new();
-    for element_id in 0u64..1000 {
-        if found.len() == wanted.len() {
-            break;
-        }
+    let try_id = |element_id: u64, found: &mut Vec<(u32, Element)>| {
         let mut token = [0u8; 20];
         token[0..4].copy_from_slice(&pid.to_le_bytes());
         token[8..12].copy_from_slice(&0x636f_636f_u32.to_le_bytes());
@@ -281,11 +289,12 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
             CFRelease(data);
             match std::ptr::NonNull::new(raw) {
                 Some(raw) => Element::from_raw(objc2_core_foundation::CFRetained::from_raw(raw)),
-                None => continue,
+                None => return,
             }
         };
+        // Children report their window's id too, so the role is checked.
         if element.string("AXRole").as_deref() != Some("AXWindow") {
-            continue;
+            return;
         }
         if let Some(id) = window_id(&element)
             && wanted.contains(&id)
@@ -293,6 +302,28 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
         {
             found.push((id, element));
         }
+    };
+    for element_id in 0..FIRST {
+        if found.len() == wanted.len() {
+            return found;
+        }
+        try_id(element_id, &mut found);
+    }
+    let cursors = CURSORS.get_or_init(Default::default);
+    let mut cursor = cursors
+        .lock()
+        .map_or(FIRST, |map| map.get(&pid).copied().unwrap_or(FIRST));
+    let deadline = std::time::Instant::now() + BUDGET;
+    while found.len() < wanted.len() && std::time::Instant::now() < deadline {
+        try_id(cursor, &mut found);
+        cursor = if cursor + 1 >= LAST {
+            FIRST
+        } else {
+            cursor + 1
+        };
+    }
+    if let Ok(mut map) = cursors.lock() {
+        map.insert(pid, cursor);
     }
     found
 }

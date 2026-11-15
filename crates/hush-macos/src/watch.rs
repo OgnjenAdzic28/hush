@@ -5,11 +5,13 @@
 //! AXObserver per watched app. The callback only bumps a counter, so it never
 //! slows the app or the run loop down.
 //!
-//! Every app Hush lists also gets a light observer for new windows only. A
-//! window that opens on another Space never shows up in `AXWindows`
-//! (see `windows`), but its creation notification carries its element, and
-//! receiving it gives the window an element id that later token lookups
-//! find.
+//! Every app Hush lists also gets a light observer for new windows and
+//! activation only. A window that opens on another Space never shows up in
+//! `AXWindows` (see `windows`), but its creation notification carries its
+//! element, and receiving it gives the window an element id that later
+//! token lookups find. When the user switches to an app, its windows are on
+//! the current Space for a while, so they are read then for the same
+//! reason: once the user moves on, they can still be reached.
 
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -152,7 +154,8 @@ impl Watcher {
             pid,
             created: Arc::clone(&self.created),
         };
-        if let Some(observer) = self.observe(pid, &["AXWindowCreated"], counter) {
+        let notifications = ["AXWindowCreated", "AXApplicationActivated"];
+        if let Some(observer) = self.observe(pid, &notifications, counter) {
             observers.insert(pid, observer);
         }
     }
@@ -214,7 +217,7 @@ impl Watcher {
 unsafe extern "C-unwind" fn callback(
     _observer: NonNull<AXObserver>,
     element: NonNull<AXUIElement>,
-    _notification: NonNull<CFString>,
+    notification: NonNull<CFString>,
     refcon: *mut c_void,
 ) {
     // SAFETY: refcon is the leaked `Counter` registered with this observer.
@@ -226,18 +229,23 @@ unsafe extern "C-unwind" fn callback(
                 activity.last = Some(Instant::now());
             }
         }
-        // Registered for window creation only, so every call is a new window.
         Counter::Windows { pid, created } => {
-            // SAFETY: the element is live for the callback; retaining it
+            // SAFETY: both are live for the callback; retaining the element
             // keeps it past the call.
-            let element = Element::from_raw(unsafe { CFRetained::retain(element) });
+            let (element, notification) =
+                unsafe { (CFRetained::retain(element), notification.as_ref()) };
+            let found = if notification.to_string() == "AXApplicationActivated" {
+                // The element is the app; its windows are on screen now.
+                Element::from_raw(element).elements("AXWindows")
+            } else {
+                vec![Element::from_raw(element)]
+            };
             if let Ok(mut created) = created.lock() {
                 let windows = created.entry(*pid).or_default();
+                windows.extend(found.into_iter().map(SentElement));
                 // Bounded for an app nobody asks about: the oldest go first.
-                if windows.len() >= 64 {
-                    windows.remove(0);
-                }
-                windows.push(SentElement(element));
+                let excess = windows.len().saturating_sub(64);
+                windows.drain(..excess);
             }
         }
     }

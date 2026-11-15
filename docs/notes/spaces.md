@@ -46,3 +46,26 @@ Doorman hides every app an agent launches. For those, `AXWindows` already lists 
 every Space, and every Accessibility step works while the app stays hidden. Pointer events reach
 the app at the right window-local point but AppKit doesn't deliver them to views, and a window that
 was never shown has no rendered contents to capture.
+
+## What other projects do (read 15 Nov 2026)
+
+- **alt-tab-macos** reaches the same conclusion from AppKit (`PublishedWindows.swift`): `AXWindows`
+  is one `windowsWithOptions:onSpaces:` query on `currentManagedSpaces`, and `AXFocusedWindow` /
+  `AXMainWindow` skip it. It brute-forces remote tokens only for window ids it has no element for,
+  in 250 ms slices that resume where they stopped, because a long-running Finder keeps its windows
+  at ids the first slice never reaches. It also checks the role, since children report their
+  window's id.
+- **yabai** scans ids `0..0x7fff` for windows its list says are missing and retries on Space
+  changes. Its author found the scan can fail right after a clean reboot, so callers must not rely
+  on it.
+- **AeroSpace** avoids the problem: one native Space, and inactive workspaces parked in a screen
+  corner. That means owning the user's window layout, which Hush doesn't.
+- Before macOS 12.3, alt-tab briefly moved other-Space windows to the current Space with
+  `CGSAddWindowsToSpaces` to read them; that stopped working, and it flashed the screen.
+- Nobody hides and unhides apps to list windows.
+
+What Hush took from this: the scan always tries the first 1,000 ids, then continues up to `0x8000`
+for 100 ms per call from where the last call stopped; only titled windows are searched for (the
+window server also lists untitled helper surfaces, such as Electron's 500x500 placeholders, which
+cost every call a full scan); and an app's windows are read when it activates, while they are on
+the user's Space, so they stay reachable after the user moves on.
