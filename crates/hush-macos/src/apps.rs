@@ -7,13 +7,8 @@ use std::time::{Duration, Instant};
 
 use hush_core::AppInfo;
 use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication};
-use objc2_core_foundation::CFRetained;
-use objc2_core_graphics::{
-    CGWindowListCopyWindowInfo, CGWindowListOption, kCGNullWindowID, kCGWindowLayer,
-    kCGWindowOwnerPID,
-};
 
-use crate::cf;
+use crate::server::{self, Which};
 
 /// Apps with a user interface that are running now.
 ///
@@ -150,7 +145,9 @@ pub(crate) fn installed(query: &str) -> Vec<AppInfo> {
 /// asking Accessibility for the focused app instead fails whenever that app
 /// is slow to answer (kAXErrorCannotComplete, seen with Electron apps).
 pub(crate) fn frontmost_pid() -> Option<i32> {
-    window_owners().first().copied()
+    server::windows(Which::OnScreen)
+        .first()
+        .map(|window| window.pid)
 }
 
 fn describe(app: &NSRunningApplication) -> AppInfo {
@@ -170,37 +167,6 @@ fn describe(app: &NSRunningApplication) -> AppInfo {
     }
 }
 
-/// Owners of on-screen normal windows, front to back.
-fn window_owners() -> Vec<i32> {
-    let options =
-        CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
-    let Some(list) = CGWindowListCopyWindowInfo(options, kCGNullWindowID) else {
-        return Vec::new();
-    };
-    // SAFETY: CGWindowListCopyWindowInfo returns an array of dictionaries.
-    let list: CFRetained<objc2_core_foundation::CFArray<objc2_core_foundation::CFDictionary>> =
-        unsafe { CFRetained::cast_unchecked(list) };
-    let mut pids: Vec<i32> = list
-        .iter()
-        .filter_map(|window| {
-            // SAFETY: window info dictionaries map CFString keys to CF values.
-            let window: &objc2_core_foundation::CFDictionary<
-                objc2_core_foundation::CFString,
-                objc2_core_foundation::CFType,
-            > = unsafe { window.cast_unchecked() };
-            // SAFETY: the keys are framework constants that are always set.
-            let (layer_key, pid_key) = unsafe { (kCGWindowLayer, kCGWindowOwnerPID) };
-            let layer = window.get(layer_key).and_then(|v| cf::number(&v))?;
-            let pid = window.get(pid_key).and_then(|v| cf::number(&v))?;
-            (layer == 0.0).then_some(pid as i32)
-        })
-        .collect();
-    // Keep front-to-back order; drop repeats after the first.
-    let mut seen = std::collections::HashSet::new();
-    pids.retain(|pid| seen.insert(*pid));
-    pids
-}
-
 fn bundle_id(path: &Path) -> Option<String> {
     // Reading Info.plist as text is enough for the identifier and avoids
     // loading the bundle. Binary plists are skipped (rare for apps).
@@ -209,4 +175,26 @@ fn bundle_id(path: &Path) -> Option<String> {
     let start = after.find("<string>")? + "<string>".len();
     let end = after[start..].find("</string>")? + start;
     Some(after[start..end].trim().to_owned())
+}
+
+/// Chromium and Electron apps (and Chromium Embedded Framework ones) need
+/// their web content switched on and keys delivered to a key window.
+pub(crate) fn is_chromium(app: &AppInfo) -> bool {
+    let Some(path) = app.path.as_deref() else {
+        return false;
+    };
+    let Ok(entries) = std::fs::read_dir(Path::new(path).join("Contents/Frameworks")) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        name.starts_with("electron framework")
+            || name.starts_with("chromium")
+            || (name.ends_with(" framework.framework")
+                && [
+                    "chrome", "edge", "brave", "opera", "vivaldi", "arc", "aside",
+                ]
+                .iter()
+                .any(|browser| name.contains(browser)))
+    })
 }

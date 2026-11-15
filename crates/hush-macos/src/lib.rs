@@ -28,6 +28,8 @@ mod roles;
 #[cfg(target_os = "macos")]
 mod script;
 #[cfg(target_os = "macos")]
+mod server;
+#[cfg(target_os = "macos")]
 mod watch;
 #[cfg(target_os = "macos")]
 mod windows;

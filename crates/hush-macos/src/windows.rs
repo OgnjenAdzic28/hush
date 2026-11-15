@@ -5,22 +5,20 @@ use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
 use hush_core::{Rect, WindowInfo};
-use objc2_core_foundation::{CFArray, CFDictionary, CFRetained, CFString, CFType};
-use objc2_core_graphics::{
-    CGWindowListCopyWindowInfo, CGWindowListOption, kCGNullWindowID, kCGWindowBounds,
-    kCGWindowLayer, kCGWindowNumber, kCGWindowOwnerPID,
-};
 
 use crate::ax::Element;
 use crate::cf;
 use crate::private;
+use crate::server::{self, Which};
 
 /// The app's windows with their elements, main window first.
 pub(crate) fn list(app: &Element, pid: i32) -> Vec<(WindowInfo, Element)> {
     let mut elements = app.elements("AXWindows");
     let listed: Vec<u32> = elements.iter().filter_map(private::window_id).collect();
-    let missing: Vec<u32> = server_windows(pid)
+    let missing: Vec<u32> = server::windows(Which::All)
         .into_iter()
+        .filter(|w| w.pid == pid && w.is_document_sized())
+        .map(|w| w.id)
         .filter(|id| !listed.contains(id) && !unresolvable(pid, *id))
         .collect();
     if !missing.is_empty() {
@@ -75,48 +73,6 @@ fn fallback_id(window: &Element) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     window.hash(&mut hasher);
     hasher.finish() | (1 << 63)
-}
-
-/// Normal windows of `pid` on any Space, from the window server.
-fn server_windows(pid: i32) -> Vec<u32> {
-    let Some(list) = CGWindowListCopyWindowInfo(CGWindowListOption::OptionAll, kCGNullWindowID)
-    else {
-        return Vec::new();
-    };
-    // SAFETY: CGWindowListCopyWindowInfo returns an array of dictionaries
-    // mapping CFString keys to CF values.
-    let list: CFRetained<CFArray<CFDictionary<CFString, CFType>>> =
-        unsafe { CFRetained::cast_unchecked(list) };
-    // SAFETY: framework constants that are always set.
-    let (pid_key, layer_key, number_key, bounds_key) = unsafe {
-        (
-            kCGWindowOwnerPID,
-            kCGWindowLayer,
-            kCGWindowNumber,
-            kCGWindowBounds,
-        )
-    };
-    list.iter()
-        .filter_map(|window| {
-            let number = |key: &CFString| window.get(key).and_then(|v| cf::number(&v));
-            if number(pid_key)? as i32 != pid || number(layer_key)? != 0.0 {
-                return None;
-            }
-            // Tiny windows are helpers (status items, hidden panels).
-            let bounds = window.get(bounds_key)?;
-            let bounds = bounds.downcast_ref::<CFDictionary>()?;
-            // SAFETY: the bounds dictionary maps CFString keys to numbers.
-            let bounds: &CFDictionary<CFString, CFType> = unsafe { bounds.cast_unchecked() };
-            let side = |name: &str| {
-                bounds
-                    .get(&cf::cfstr(name))
-                    .and_then(|v| cf::number(&v))
-                    .unwrap_or(0.0)
-            };
-            (side("Width") >= 100.0 && side("Height") >= 60.0)
-                .then(|| number(number_key).map(|n| n as u32))?
-        })
-        .collect()
 }
 
 /// Window ids the token scan didn't find, so later calls don't scan again.
