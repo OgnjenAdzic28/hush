@@ -1,0 +1,23 @@
+[package]
+name = "hush"
+description = "Hush: background computer use for any agent. MCP server and CLI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hush"
+path = "src/main.rs"
+
+[dependencies]
+hush-core = { path = "../hush-core" }
+hush-engine = { path = "../hush-engine" }
+hush-mcp = { path = "../hush-mcp" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+hush-macos = { path = "../hush-macos" }
+
+[lints]
+workspace = true
