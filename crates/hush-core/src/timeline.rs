@@ -148,6 +148,55 @@ fn point(word: &str) -> Option<(f64, f64)> {
     Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
 }
 
+/// A drag as a timeline: press, a small first move (AppKit starts a drag
+/// session only past a few points of travel), an even glide over about a
+/// quarter second, a pause over the target so it can react, and release.
+pub fn drag(from: (f64, f64), to: (f64, f64)) -> Vec<Timed> {
+    const STEPS: u32 = 12;
+    let ms = |n: u64| Duration::from_millis(n);
+    let button = Button::Left;
+    let mut events = vec![Timed {
+        at: ms(0),
+        input: Input::PointerDown {
+            x: from.0,
+            y: from.1,
+            button,
+        },
+    }];
+    let nudge = if to.1 < from.1 { -4.0 } else { 4.0 };
+    events.push(Timed {
+        at: ms(50),
+        input: Input::PointerMove {
+            x: from.0,
+            y: from.1 + nudge,
+        },
+    });
+    for step in 1..=STEPS {
+        let k = f64::from(step) / f64::from(STEPS);
+        events.push(Timed {
+            at: ms(70 + 20 * u64::from(step)),
+            input: Input::PointerMove {
+                x: from.0 + (to.0 - from.0) * k,
+                y: from.1 + nudge + (to.1 - from.1 - nudge) * k,
+            },
+        });
+    }
+    let end = 70 + 20 * u64::from(STEPS);
+    events.push(Timed {
+        at: ms(end + 80),
+        input: Input::PointerMove { x: to.0, y: to.1 },
+    });
+    events.push(Timed {
+        at: ms(end + 120),
+        input: Input::PointerUp {
+            x: to.0,
+            y: to.1,
+            button,
+        },
+    });
+    events
+}
+
 /// How late each event was posted against its schedule.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Played {
@@ -249,6 +298,34 @@ mod tests {
             let error = parse(&lines(text)).unwrap_err();
             assert!(error.contains(wanted), "{text}: {error}");
         }
+    }
+
+    #[test]
+    fn a_drag_presses_glides_and_releases_on_the_target() {
+        let events = drag((80.0, 160.0), (80.0, 115.0));
+        assert!(matches!(
+            events[0].input,
+            Input::PointerDown {
+                x: 80.0,
+                y: 160.0,
+                ..
+            }
+        ));
+        assert!(
+            matches!(events[1].input, Input::PointerMove { y: 156.0, .. }),
+            "nudged toward the target"
+        );
+        let last = events.last().unwrap();
+        assert!(matches!(
+            last.input,
+            Input::PointerUp {
+                x: 80.0,
+                y: 115.0,
+                ..
+            }
+        ));
+        assert!(events.windows(2).all(|w| w[0].at < w[1].at));
+        assert!(last.at < Duration::from_millis(500));
     }
 
     #[test]

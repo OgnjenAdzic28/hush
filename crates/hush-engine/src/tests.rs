@@ -170,6 +170,21 @@ impl Platform for Fake {
         ))
     }
 
+    fn play(
+        &self,
+        _app: &AppInfo,
+        _window: &WindowInfo,
+        events: &[hush_core::Timed],
+    ) -> Result<hush_core::Played> {
+        let first = events.first().map(|e| e.input);
+        let last = events.last().map(|e| e.input);
+        self.changed(format!(
+            "Play {} events {first:?} .. {last:?}",
+            events.len()
+        ));
+        Ok(hush_core::Played::default())
+    }
+
     fn activity(&self, _app: &AppInfo) -> Activity {
         self.world.borrow().activity
     }
@@ -376,4 +391,22 @@ fn a_menu_left_open_after_pick_is_closed_so_it_cannot_cover_the_user() {
         "Key { combo: KeyCombo { modifiers: Modifiers { cmd: false, shift: false, alt: false, ctrl: false, function: false }, key: Named(Escape) }, repeat: 1 }"
     );
     assert!(!report.contains("menuitem"), "{report}");
+}
+
+#[test]
+fn drag_plays_a_press_glide_and_release_between_the_two_elements() {
+    let mut engine = Engine::new(Fake::new());
+    engine.observe("Editor", ObserveOptions::default()).unwrap();
+    let report = engine
+        .act("Editor", None, &steps(&["drag b1 to 300,200"]))
+        .unwrap();
+    assert!(report.contains("dragged"), "{report}");
+    let ops = engine.platform().ops();
+    let play = ops
+        .iter()
+        .find(|op| op.starts_with("Play"))
+        .expect("a drag plays a timeline");
+    // Every element of the fake sits at 10,10 sized 100x20: its center is 60,20.
+    assert!(play.contains("PointerDown { x: 60.0, y: 20.0"), "{play}");
+    assert!(play.contains("PointerUp { x: 300.0, y: 200.0"), "{play}");
 }
