@@ -111,8 +111,16 @@ pub(crate) fn window(
 
         let index = nodes.len();
         let visible = screen.is_none_or(|f| f.is_empty() || f.intersects(&clip));
+        // A window's title bar buttons hold only their glyphs, which AppKit
+        // rebuilds without any notification whenever the window's key state
+        // changes (Hush's synthetic focus does that on every step), so
+        // reading them would report elements that come and go.
+        let glyphs_only = matches!(
+            subrole.as_deref(),
+            Some("AXCloseButton" | "AXMinimizeButton" | "AXZoomButton" | "AXFullScreenButton")
+        );
         let mut children = match get(A::Children) {
-            Some(children) if visible => elements_of(children),
+            Some(children) if visible && !glyphs_only => elements_of(children),
             _ => Vec::new(),
         };
         if !visible {
