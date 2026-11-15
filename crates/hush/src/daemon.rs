@@ -147,15 +147,20 @@ pub(crate) fn serve<P: Platform>(engine: &mut Engine<P>) -> Result<(), String> {
             UnixListener::bind(&path).map_err(|e| e.to_string())?
         }
     };
-    let last_request = Arc::new(Mutex::new(Instant::now()));
+    // `None` while a command runs, so a long one is never cut off.
+    let last_request = Arc::new(Mutex::new(Some(Instant::now())));
     watch_idle(Arc::clone(&last_request), path.clone());
     let build = build();
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
         if let Ok(mut last) = last_request.lock() {
-            *last = Instant::now();
+            *last = None;
         }
-        if handle(engine, stream, &build) == Handled::Restart {
+        let handled = handle(engine, stream, &build);
+        if let Ok(mut last) = last_request.lock() {
+            *last = Some(Instant::now());
+        }
+        if handled == Handled::Restart {
             let _ = std::fs::remove_file(&path);
             return Ok(());
         }
@@ -201,8 +206,9 @@ fn handle<P: Platform>(engine: &mut Engine<P>, stream: UnixStream, build: &str) 
     Handled::Served
 }
 
-/// Exits the process once no request came for `IDLE`.
-fn watch_idle(last_request: Arc<Mutex<Instant>>, path: PathBuf) {
+/// Exits the process once no request came for `IDLE` since the last one
+/// finished.
+fn watch_idle(last_request: Arc<Mutex<Option<Instant>>>, path: PathBuf) {
     thread::spawn(move || {
         loop {
             // A coarse timer: idleness is measured in minutes.
