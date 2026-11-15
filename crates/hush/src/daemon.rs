@@ -71,20 +71,34 @@ enum Reply {
     Restart,
 }
 
+/// `None` only when the request never reached the daemon. Once it was sent,
+/// the daemon may have acted, so a lost reply is an error, never a reason
+/// to run the command again in process.
 fn exchange(mut stream: UnixStream, message: &str) -> Option<Reply> {
     stream.set_read_timeout(Some(REPLY_LIMIT)).ok()?;
     writeln!(stream, "{message}").ok()?;
+    let lost = || {
+        Reply::Done(Err(
+            "lost the daemon's reply; the command may have run, so look before repeating it".into(),
+        ))
+    };
     let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line).ok()?;
-    let reply: Value = serde_json::from_str(&line).ok()?;
+    if BufReader::new(stream).read_line(&mut line).is_err() {
+        return Some(lost());
+    }
+    let Ok(reply) = serde_json::from_str::<Value>(&line) else {
+        return Some(lost());
+    };
     if reply["restart"].as_bool() == Some(true) {
         return Some(Reply::Restart);
     }
-    let text = reply["text"].as_str()?.to_owned();
-    Some(Reply::Done(if reply["ok"].as_bool()? {
-        Ok(text)
+    let (Some(ok), Some(text)) = (reply["ok"].as_bool(), reply["text"].as_str()) else {
+        return Some(lost());
+    };
+    Some(Reply::Done(if ok {
+        Ok(text.to_owned())
     } else {
-        Err(text)
+        Err(text.to_owned())
     }))
 }
 
