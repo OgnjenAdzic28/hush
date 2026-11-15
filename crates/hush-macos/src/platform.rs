@@ -63,13 +63,10 @@ impl MacPlatform {
     /// by other tools animate). The tree builds asynchronously; this waits
     /// until its creation events stop.
     fn enable_web_content(&self, app: &AppInfo) {
-        let (Some(pid), Some(path)) = (app.pid, app.path.as_deref()) else {
+        let Some(pid) = app.pid.map(|p| p as i32) else {
             return;
         };
-        let pid = pid as i32;
-        if !self.web_enabled.borrow_mut().insert(pid)
-            || !act::is_chromium(std::path::Path::new(path))
-        {
+        if !self.web_enabled.borrow_mut().insert(pid) || !apps::is_chromium(app) {
             return;
         }
         self.watcher.watch(pid);

@@ -1,7 +1,6 @@
 //! Carrying out operations on a background app without touching the user's
 //! focus, pointer, keyboard or clipboard.
 
-use std::path::Path;
 use std::ptr::NonNull;
 
 use std::thread;
@@ -14,7 +13,7 @@ use objc2_core_foundation::{CFBoolean, CFNumber, CFRange, CFRetained, CFString, 
 
 use crate::ax::Element;
 use crate::private::SyntheticFocus;
-use crate::{cf, keys, menu, pointer};
+use crate::{apps, cf, keys, menu, pointer};
 
 /// What an operation needs to know about where it lands.
 pub(crate) struct Target<'a> {
@@ -215,11 +214,7 @@ fn type_text(
 /// and keys are posted only once Accessibility confirms it: a key that lands
 /// in another window or field is worse than a refused step.
 fn with_keys(target: &Target<'_>, app_element: &Element, post: impl FnOnce()) -> Result<()> {
-    let chromium = target
-        .app
-        .path
-        .as_deref()
-        .is_some_and(|path| is_chromium(Path::new(path)));
+    let chromium = apps::is_chromium(target.app);
     if !chromium || target.app.frontmost {
         post();
         return Ok(());
@@ -265,23 +260,6 @@ fn wait_for_key_window(app: &Element, window: &Element) -> bool {
         }
         thread::sleep(Duration::from_millis(2));
     }
-}
-
-pub(crate) fn is_chromium(bundle: &Path) -> bool {
-    let Ok(entries) = std::fs::read_dir(bundle.join("Contents/Frameworks")) else {
-        return false;
-    };
-    entries.flatten().any(|entry| {
-        let name = entry.file_name().to_string_lossy().to_lowercase();
-        name.starts_with("electron framework")
-            || name.starts_with("chromium")
-            || (name.ends_with(" framework.framework")
-                && [
-                    "chrome", "edge", "brave", "opera", "vivaldi", "arc", "aside",
-                ]
-                .iter()
-                .any(|browser| name.contains(browser)))
-    })
 }
 
 fn range(location: usize, length: usize) -> Result<CFRetained<AXValue>> {
