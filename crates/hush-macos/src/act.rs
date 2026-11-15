@@ -4,18 +4,47 @@
 use std::path::Path;
 use std::ptr::NonNull;
 
-use hush_core::{AppInfo, Error, Op, Result};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use hush_core::{AppInfo, Error, Op, Result, WindowInfo};
+use objc2_app_kit::NSRunningApplication;
 use objc2_application_services::{AXError, AXValue, AXValueType};
 use objc2_core_foundation::{CFBoolean, CFNumber, CFRange, CFRetained, CFString, CFType};
 
 use crate::ax::Element;
-use crate::{cf, keys, menu};
+use crate::private::SyntheticFocus;
+use crate::{cf, keys, menu, pointer};
 
-pub(crate) fn perform(app: &AppInfo, op: Op<'_, Element>) -> Result<()> {
-    let pid = app
-        .pid
-        .map(|p| p as i32)
-        .ok_or_else(|| Error::NotFound(format!("{} isn't running", app.name)))?;
+/// What an operation needs to know about where it lands.
+pub(crate) struct Target<'a> {
+    pub(crate) app: &'a AppInfo,
+    pub(crate) window: &'a WindowInfo,
+    pub(crate) window_element: &'a Element,
+}
+
+impl Target<'_> {
+    fn pid(&self) -> Result<i32> {
+        self.app
+            .pid
+            .map(|p| p as i32)
+            .ok_or_else(|| Error::NotFound(format!("{} isn't running", self.app.name)))
+    }
+
+    fn pointer(&self) -> Result<pointer::Target> {
+        Ok(pointer::Target {
+            pid: self.pid()?,
+            window: u32::try_from(self.window.id)
+                .map_err(|_| Error::Unsupported("this window has no window-server id".into()))?,
+            origin: (self.window.frame.x, self.window.frame.y),
+            frontmost: self.app.frontmost,
+        })
+    }
+}
+
+pub(crate) fn perform(target: &Target<'_>, op: Op<'_, Element>) -> Result<()> {
+    let app = target.app;
+    let pid = target.pid()?;
     let app_element = Element::application(pid);
     match op {
         Op::Press(element) => perform_action(element, "AXPress"),
@@ -24,7 +53,7 @@ pub(crate) fn perform(app: &AppInfo, op: Op<'_, Element>) -> Result<()> {
         Op::Focus(element) => set(element, "AXFocused", CFBoolean::new(true)),
         Op::Select(element) => select(element),
         Op::SetValue(element, value) => set_value(element, value),
-        Op::Type { text, into } => type_text(app, pid, &app_element, into, text),
+        Op::Type { text, into } => type_text(target, &app_element, into, text),
         Op::Key { combo, repeat } => {
             if combo.modifiers.cmd {
                 // Background apps ignore Cmd key events; their menu items don't.
@@ -39,17 +68,21 @@ pub(crate) fn perform(app: &AppInfo, op: Op<'_, Element>) -> Result<()> {
                 }
                 return Ok(());
             }
-            refuse_keys_for_chromium(app)?;
-            if keys::post_combo(pid, combo, repeat) {
-                Ok(())
-            } else {
-                Err(Error::Unsupported(format!("no key code for {combo}")))
+            if keys::code(combo.key).is_none() {
+                return Err(Error::Unsupported(format!("no key code for {combo}")));
             }
+            with_keys(target, &app_element, || {
+                keys::post_combo(pid, combo, repeat);
+            })
         }
         Op::Menu(path) => menu::press_path(&app_element, path),
-        Op::Click { .. } | Op::Scroll { .. } => Err(Error::Unsupported(
-            "pointer clicks and scrolling in the background aren't built yet".into(),
-        )),
+        Op::Click {
+            x,
+            y,
+            button,
+            count,
+        } => pointer::click(&target.pointer()?, x, y, button, count),
+        Op::Scroll { x, y, dx, dy } => pointer::scroll(&target.pointer()?, x, y, dx, dy),
     }
 }
 
@@ -140,13 +173,12 @@ fn reads_back(element: &Element, value: &str) -> bool {
 /// background window and sends no key events at all. Key events to the
 /// process are the fallback.
 fn type_text(
-    app: &AppInfo,
-    pid: i32,
+    target: &Target<'_>,
     app_element: &Element,
     into: Option<&Element>,
     text: &str,
 ) -> Result<()> {
-    let target = match into {
+    let field = match into {
         Some(element) => {
             let _ = set(element, "AXFocused", CFBoolean::new(true));
             Some(element.clone())
@@ -155,33 +187,73 @@ fn type_text(
     };
     // An app that accepted the insert has the text, even if its value
     // updates a moment later; typing it again as keys would double it.
-    if let Some(target) = &target
-        && set(target, "AXSelectedText", &CFString::from_str(text)).is_ok()
+    if let Some(field) = &field
+        && set(field, "AXSelectedText", &CFString::from_str(text)).is_ok()
     {
         return Ok(());
     }
-    refuse_keys_for_chromium(app)?;
-    keys::post_text(pid, text);
-    Ok(())
+    let pid = target.pid()?;
+    with_keys(target, app_element, || keys::post_text(pid, text))
 }
 
-/// Chromium and Electron only insert typed text into the window AppKit
-/// considers key, which a background window isn't. Until Hush can make the
-/// window key inside the app (the SkyLight route), key events would be
-/// silently dropped there, so say so instead.
-fn refuse_keys_for_chromium(app: &AppInfo) -> Result<()> {
-    if app
+/// Runs `post` (which posts key events to the app) so the events are used.
+///
+/// AppKit apps take key events in the background. Chromium and Electron
+/// insert typed text only into the window AppKit considers key, so for them
+/// the window is made key inside the app first (the user's app keeps focus),
+/// and keys are posted only once Accessibility confirms it: a key that lands
+/// in another window or field is worse than a refused step.
+fn with_keys(target: &Target<'_>, app_element: &Element, post: impl FnOnce()) -> Result<()> {
+    let chromium = target
+        .app
         .path
         .as_deref()
-        .is_some_and(|path| is_chromium(Path::new(path)))
+        .is_some_and(|path| is_chromium(Path::new(path)));
+    if !chromium || target.app.frontmost {
+        post();
+        return Ok(());
+    }
+    let pointer = target.pointer()?;
+    if NSRunningApplication::runningApplicationWithProcessIdentifier(pointer.pid)
+        .is_some_and(|app| app.isHidden())
     {
         return Err(Error::Unsupported(format!(
-            "{} is a Chromium or Electron app, which drops key events sent in the background; use set on \
-             the field instead",
-            app.name
+            "{} is hidden; Hush doesn't unhide apps on its own, so show it first",
+            target.app.name
         )));
     }
-    Ok(())
+    let focus = SyntheticFocus::begin(pointer.pid, pointer.window)?;
+    let result = focus.make_key().and_then(|()| {
+        if !wait_for_key_window(app_element, target.window_element) {
+            return Err(Error::Unsupported(format!(
+                "couldn't make the window key inside {} without bringing it to the front",
+                target.app.name
+            )));
+        }
+        post();
+        // Keys are taken asynchronously; on macOS 26 a zero gap here lost 1
+        // key in 50 (open-computer-use), 10 ms lost none.
+        thread::sleep(KEY_RELEASE);
+        Ok(())
+    });
+    focus.end();
+    result
+}
+
+const KEY_RELEASE: Duration = Duration::from_millis(10);
+const KEY_WINDOW_LIMIT: Duration = Duration::from_millis(250);
+
+fn wait_for_key_window(app: &Element, window: &Element) -> bool {
+    let deadline = Instant::now() + KEY_WINDOW_LIMIT;
+    loop {
+        if app.element("AXFocusedWindow").as_ref() == Some(window) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(2));
+    }
 }
 
 pub(crate) fn is_chromium(bundle: &Path) -> bool {
