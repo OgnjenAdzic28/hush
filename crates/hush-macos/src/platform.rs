@@ -12,7 +12,7 @@ use hush_core::{
 use crate::ax::{self, Element};
 use crate::script::{self, Scripts};
 use crate::watch::Watcher;
-use crate::{act, apps, capture, read, windows};
+use crate::{act, apps, capture, cf, read, windows};
 
 /// How long one accessibility call may block on an app that isn't
 /// answering. Long enough for a busy app, short enough that a hung one
@@ -77,13 +77,27 @@ impl MacPlatform {
         // Chromium Embedded Framework apps (Spotify) only know the older
         // switch, so it is the fallback.
         let app_element = Element::application(pid);
+        // Already on (an earlier Hush process or another assistive app):
+        // the tree exists, so there is nothing to wait for.
+        let on = |attribute: &str| {
+            app_element
+                .value(attribute)
+                .ok()
+                .and_then(|v| cf::boolean(&v))
+                == Some(true)
+        };
+        if on("AXManualAccessibility") || on("AXEnhancedUserInterface") {
+            return;
+        }
         if act::set_flag(&app_element, "AXManualAccessibility").is_err()
             && act::set_flag(&app_element, "AXEnhancedUserInterface").is_err()
         {
             return;
         }
         let rules = Rules {
-            reaction: Duration::from_millis(300),
+            // A first switch starts a burst of creation events within tens of
+            // milliseconds; no events means the tree was already there.
+            reaction: Duration::from_millis(100),
             quiet: Duration::from_millis(60),
             limit: Duration::from_millis(1500),
         };

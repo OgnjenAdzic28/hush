@@ -11,6 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 use hush_core::{Button, Error, Result};
+use objc2_app_kit::NSRunningApplication;
 use objc2_core_foundation::CGPoint;
 use objc2_core_graphics::{
     CGEvent, CGEventField, CGEventSource, CGEventSourceStateID, CGEventType, CGMouseButton,
@@ -74,6 +75,16 @@ pub(crate) fn click(target: &Target, x: f64, y: f64, button: Button, count: u8) 
     );
     let at = (x, y);
     let primer = (-1.0, -1.0);
+    // The synthetic-activate record would make a hidden app show itself;
+    // Hush doesn't unhide apps on its own.
+    if !target.frontmost
+        && NSRunningApplication::runningApplicationWithProcessIdentifier(target.pid)
+            .is_some_and(|app| app.isHidden())
+    {
+        return Err(Error::Unsupported(
+            "the app is hidden; show it first, Hush won't unhide it on its own".into(),
+        ));
+    }
     let focus = (!target.frontmost)
         .then(|| SyntheticFocus::begin(target.pid, target.window))
         .transpose()?;
