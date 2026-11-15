@@ -233,7 +233,11 @@ fn worth_a_line<H>(node: &Node<H>, name: &str, context: &Context<'_>) -> bool {
         // Web apps often label a group with all the text inside it (a chat
         // message, a card); the text lines would say it all again.
         Role::Text | Role::Heading | Role::Image => {
-            !context.in_control && !name.is_empty() && !context.parent_name.contains(name)
+            // Short text ("3", "OK") appears inside unrelated labels by
+            // chance, so only longer text is matched as part of one.
+            let repeated =
+                repeats_parent || (name.chars().count() >= 4 && context.parent_name.contains(name));
+            !context.in_control && !name.is_empty() && !repeated
         }
         role if role.is_transparent() => !context.in_control && !name.is_empty() && !repeats_parent,
         role if role.is_control() && context.in_control => !repeats_parent,

@@ -8,6 +8,8 @@
 //! - tables and outlines read only their visible rows and count the rest;
 //! - a hard element budget so one huge window can't stall a call.
 
+use std::collections::HashSet;
+
 use hush_core::{Actions, AppInfo, Node, Rect, Role, Snapshot, States, WindowInfo};
 use objc2_core_foundation::{CFArray, CFRetained, CFString, CFType};
 
@@ -58,7 +60,10 @@ pub(crate) fn window(
 ) -> Snapshot<Element> {
     let names: Vec<CFRetained<CFString>> = ATTRIBUTES.iter().map(|a| cf::cfstr(a)).collect();
     let attributes = CFArray::from_retained_objects(&names);
-    let origin = (info.frame.x, info.frame.y);
+    // The window may have moved since it was listed; its own frame, read
+    // with the root element, is the origin for every other frame.
+    let mut info = info.clone();
+    let mut origin = (info.frame.x, info.frame.y);
     let screen_clip = info.frame;
 
     let mut nodes: Vec<Node<Element>> = Vec::new();
@@ -77,6 +82,14 @@ pub(crate) fn window(
         };
 
         let screen = frame(get(A::Position), get(A::Size));
+        let mut clip = clip;
+        if parent.is_none()
+            && let Some(f) = screen
+        {
+            origin = (f.x, f.y);
+            info.frame = f;
+            clip = f;
+        }
         let mut node = Node {
             handle: element.clone(),
             role,
@@ -106,13 +119,15 @@ pub(crate) fn window(
             node.states.set(States::OFFSCREEN, true);
         }
         if matches!(role, Role::Table | Role::Outline) && !children.is_empty() {
-            let rows = element.elements("AXVisibleRows");
-            if !rows.is_empty() {
-                let total = element.count("AXRows").unwrap_or(rows.len());
-                node.unread = total.saturating_sub(rows.len());
-                // Headers and other non-row children still count.
-                children.retain(|child| child.string("AXRole").as_deref() != Some("AXRow"));
-                children.extend(rows);
+            let visible_rows = element.elements("AXVisibleRows");
+            if !visible_rows.is_empty() {
+                // Two round trips for the whole table, not one per row:
+                // headers and other non-row children are what's left after
+                // removing every row, compared locally.
+                let rows: HashSet<Element> = element.elements("AXRows").into_iter().collect();
+                node.unread = rows.len().saturating_sub(visible_rows.len());
+                children.retain(|child| !rows.contains(child));
+                children.extend(visible_rows);
             }
         }
         if nodes.len() + stack.len() + children.len() > BUDGET {
@@ -129,7 +144,7 @@ pub(crate) fn window(
             stack.push((child, Some(index), child_clip));
         }
     }
-    Snapshot::new(app.clone(), info.clone(), nodes, menus)
+    Snapshot::new(app.clone(), info, nodes, menus)
 }
 
 /// Titles of the app's menu bar menus, without the Apple menu.
