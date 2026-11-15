@@ -23,7 +23,7 @@ usage:
   hush mcp                                  serve MCP over stdio
   hush daemon                               serve shell commands (started for you)
   hush apps [QUERY]                         running apps, or apps matching QUERY
-  hush observe APP [--window W] [--focus REF] [--full]
+  hush observe APP [--window W] [--focus REF] [--full] [--menus]
   hush act APP [--window W] STEP...         each STEP is one quoted step
   hush timeline APP [--window W] EVENT...   events on a schedule; - reads them from stdin
   hush script APP SOURCE [--js]

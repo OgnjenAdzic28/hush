@@ -4,6 +4,7 @@
 
 pub mod diff;
 pub mod key;
+pub mod menus;
 pub mod model;
 pub mod outline;
 pub mod platform;
@@ -17,6 +18,7 @@ mod test_support;
 
 pub use diff::Diff;
 pub use key::{Key, KeyCombo, Modifiers, NamedKey};
+pub use menus::MenuEntry;
 pub use model::{Actions, AppInfo, Image, Node, Rect, Role, Snapshot, States, WindowInfo};
 pub use outline::{OutlineOptions, View, approx_tokens};
 pub use platform::{Error, Op, Platform, Result, ScriptLanguage};

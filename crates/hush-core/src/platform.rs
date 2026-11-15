@@ -4,6 +4,7 @@
 use std::hash::Hash;
 
 use crate::key::KeyCombo;
+use crate::menus::MenuEntry;
 use crate::model::{AppInfo, Image, Rect, Snapshot, WindowInfo};
 use crate::settle::Activity;
 use crate::step::Button;
@@ -79,6 +80,13 @@ pub trait Platform {
     fn capture(&self, window: &WindowInfo, region: Option<Rect>, max_width: u32) -> Result<Image>;
 
     fn script(&self, app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String>;
+
+    /// Every item of the app's menu bar, in menu order.
+    fn menus(&self, _app: &AppInfo) -> Result<Vec<MenuEntry>> {
+        Err(Error::Unsupported(
+            "this platform can't list menus yet".into(),
+        ))
+    }
 
     /// Plays `events` on their schedule from now, on the target app only,
     /// and says how late each one was posted.

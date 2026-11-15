@@ -117,6 +117,13 @@ impl<P: Platform> Engine<P> {
         Ok(text)
     }
 
+    /// Every menu command of the app with its shortcut, one line per menu.
+    pub fn menus(&mut self, app: &str) -> Result<String> {
+        let (app, _) = self.target(app, None)?;
+        let entries = self.platform.menus(&app)?;
+        Ok(hush_core::menus::render(&app.name, &entries))
+    }
+
     /// A screenshot of the window, or of one element in it.
     pub fn see(
         &mut self,
