@@ -19,6 +19,9 @@ pub(crate) fn command<P: Platform>(
         "apps" => engine
             .apps(flags.positional.first().map(String::as_str))
             .map_err(|e| e.to_string()),
+        "observe" if flags.switch("--menus") => {
+            engine.menus(&flags.app()?).map_err(|e| e.to_string())
+        }
         "observe" => {
             let app = flags.app()?;
             let options = ObserveOptions {

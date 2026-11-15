@@ -44,7 +44,8 @@ pub(crate) fn list() -> Value {
                     "app": {"type": "string", "description": "App name, bundle id or pid"},
                     "window": {"type": "string", "description": "Part of a window title (default: main window)"},
                     "focus": {"type": "string", "description": "A ref: show only this part, unfolded"},
-                    "full": {"type": "boolean", "description": "The whole outline instead of changes"}
+                    "full": {"type": "boolean", "description": "The whole outline instead of changes"},
+                    "menus": {"type": "boolean", "description": "Instead: every menu command with its shortcut"}
                 },
                 "required": ["app"]
             }
@@ -127,6 +128,9 @@ fn run<P: Platform>(engine: &mut Engine<P>, name: &str, args: &Value) -> Result<
     };
     match name {
         "apps" => text(engine.apps(string("query")).map_err(|e| e.to_string())?),
+        "observe" if args.get("menus").and_then(Value::as_bool) == Some(true) => {
+            text(engine.menus(app()?).map_err(|e| e.to_string())?)
+        }
         "observe" => {
             let options = ObserveOptions {
                 window: string("window"),
