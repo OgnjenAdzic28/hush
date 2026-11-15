@@ -145,7 +145,8 @@ impl Platform for MacPlatform {
 
     fn windows(&self, app: &AppInfo) -> Result<Vec<WindowInfo>> {
         self.enable_web_content(app);
-        let listed = windows::list(&Self::app_element(app)?);
+        let pid = app.pid.map_or(0, |p| p as i32);
+        let listed = windows::list(&Self::app_element(app)?, pid);
         let mut cache = self.windows.borrow_mut();
         cache.clear();
         Ok(listed

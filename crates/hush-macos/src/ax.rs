@@ -47,6 +47,10 @@ impl Element {
         Element(unsafe { AXUIElement::new_system_wide() })
     }
 
+    pub(crate) fn from_raw(element: CFRetained<AXUIElement>) -> Element {
+        Element(element)
+    }
+
     pub(crate) fn raw(&self) -> &AXUIElement {
         &self.0
     }
