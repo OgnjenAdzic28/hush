@@ -1,0 +1,10 @@
+Hush
+Copyright 2026 Ognjen Adzic and the Hush contributors
+
+This product is licensed under the MIT License (see LICENSE).
+
+It includes or adapts the following third-party work:
+
+- mattpocock/skills (https://github.com/mattpocock/skills), MIT License.
+  The codebase-design and improve-codebase-architecture agent skills in
+  .agents/skills come from it. See .agents/skills/mattpocock-skills.LICENSE.
