@@ -7,9 +7,10 @@ use std::collections::HashMap;
 use std::process::Command;
 
 use hush_core::{Error, Result};
-use objc2::AllocAnyThread;
 use objc2::rc::Retained;
-use objc2_foundation::{NSAppleScript, NSDictionary, NSString};
+use objc2::runtime::AnyObject;
+use objc2::{AllocAnyThread, msg_send};
+use objc2_foundation::{NSAppleEventDescriptor, NSAppleScript, NSDictionary, NSString};
 
 #[derive(Debug, Default)]
 pub(crate) struct Scripts {
@@ -38,15 +39,20 @@ impl Scripts {
                 script
             }
         };
-        let mut error = None;
-        // SAFETY: as above.
-        let result = unsafe { script.executeAndReturnError(Some(&mut error)) };
-        if error.is_some() {
+        let mut error: Option<Retained<NSDictionary<NSString, AnyObject>>> = None;
+        // The generated binding promises a non-nil result, but the method
+        // returns nil when the script fails at runtime, so it is called
+        // directly with an optional result.
+        // SAFETY: `executeAndReturnError:` takes an error out-slot and
+        // returns an autoreleased descriptor or nil.
+        let result: Option<Retained<NSAppleEventDescriptor>> =
+            unsafe { msg_send![&*script, executeAndReturnError: Some(&mut error)] };
+        let Some(result) = result else {
             return Err(Error::Failed(format!(
                 "the script failed: {}",
                 message(error)
             )));
-        }
+        };
         Ok(result
             .stringValue()
             .map(|s| s.to_string())
@@ -71,7 +77,7 @@ pub(crate) fn javascript(source: &str) -> Result<String> {
     }
 }
 
-fn message(error: Option<Retained<NSDictionary<NSString, objc2::runtime::AnyObject>>>) -> String {
+fn message(error: Option<Retained<NSDictionary<NSString, AnyObject>>>) -> String {
     let Some(error) = error else {
         return "unknown error".into();
     };

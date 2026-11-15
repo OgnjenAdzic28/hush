@@ -11,7 +11,6 @@ use objc2_core_graphics::{
     kCGWindowOwnerPID,
 };
 
-use crate::ax::Element;
 use crate::cf;
 
 /// Apps with a user interface that are running now. NSWorkspace's list is
@@ -77,11 +76,12 @@ pub(crate) fn installed(query: &str) -> Vec<AppInfo> {
     apps
 }
 
-/// The app the user is in, from Accessibility (always current).
+/// The app the user is in: the owner of the frontmost normal window. The
+/// window server's list is always current and in front-to-back order;
+/// asking Accessibility for the focused app instead fails whenever that app
+/// is slow to answer (kAXErrorCannotComplete, seen with Electron apps).
 pub(crate) fn frontmost_pid() -> Option<i32> {
-    Element::system_wide()
-        .element("AXFocusedApplication")
-        .and_then(|app| app.pid())
+    window_owners().first().copied()
 }
 
 fn describe(app: &NSRunningApplication, frontmost: Option<i32>) -> AppInfo {
@@ -101,6 +101,7 @@ fn describe(app: &NSRunningApplication, frontmost: Option<i32>) -> AppInfo {
     }
 }
 
+/// Owners of on-screen normal windows, front to back.
 fn window_owners() -> Vec<i32> {
     let options =
         CGWindowListOption::OptionOnScreenOnly | CGWindowListOption::ExcludeDesktopElements;
@@ -125,8 +126,9 @@ fn window_owners() -> Vec<i32> {
             (layer == 0.0).then_some(pid as i32)
         })
         .collect();
-    pids.sort_unstable();
-    pids.dedup();
+    // Keep front-to-back order; drop repeats after the first.
+    let mut seen = std::collections::HashSet::new();
+    pids.retain(|pid| seen.insert(*pid));
     pids
 }
 
