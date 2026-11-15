@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use hush_core::AppInfo;
 use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication};
@@ -28,18 +29,19 @@ pub(crate) fn running() -> Vec<AppInfo> {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     known.retain(|pid, _| pids.contains(pid));
     let mut apps = Vec::new();
+    let now = Instant::now();
     for pid in pids {
-        let entry = known.entry(pid).or_insert_with(|| {
-            // Only processes inside an app bundle can be regular apps; the
-            // path check is one syscall, the AppKit lookup is not.
-            if !in_app_bundle(pid) {
-                return None;
-            }
-            NSRunningApplication::runningApplicationWithProcessIdentifier(pid)
-                .filter(|app| app.activationPolicy() == NSApplicationActivationPolicy::Regular)
-                .map(|app| describe(&app))
-        });
-        if let Some(app) = entry {
+        let entry = known.entry(pid).or_insert_with(|| Seen::ask(pid, now));
+        // A process that just started may not have declared itself an app
+        // yet (it does so as it finishes launching), so "not an app" is
+        // only trusted after a few seconds.
+        if entry.app.is_none() && entry.bundled && now.duration_since(entry.first) < SETTLING {
+            *entry = Seen {
+                first: entry.first,
+                ..Seen::ask(pid, now)
+            };
+        }
+        if let Some(app) = &entry.app {
             let mut app = app.clone();
             app.frontmost = frontmost == Some(pid);
             apps.push(app);
@@ -50,7 +52,34 @@ pub(crate) fn running() -> Vec<AppInfo> {
 }
 
 /// What each pid seen so far is: a regular app, or not one.
-static KNOWN: Mutex<BTreeMap<i32, Option<AppInfo>>> = Mutex::new(BTreeMap::new());
+static KNOWN: Mutex<BTreeMap<i32, Seen>> = Mutex::new(BTreeMap::new());
+
+/// How long after first sight a bundled process is asked again.
+const SETTLING: Duration = Duration::from_secs(5);
+
+struct Seen {
+    first: Instant,
+    bundled: bool,
+    app: Option<AppInfo>,
+}
+
+impl Seen {
+    fn ask(pid: i32, now: Instant) -> Seen {
+        // Only processes inside an app bundle can be regular apps; the path
+        // check is one syscall, the AppKit lookup is not.
+        let bundled = in_app_bundle(pid);
+        let app = bundled
+            .then(|| NSRunningApplication::runningApplicationWithProcessIdentifier(pid))
+            .flatten()
+            .filter(|app| app.activationPolicy() == NSApplicationActivationPolicy::Regular)
+            .map(|app| describe(&app));
+        Seen {
+            first: now,
+            bundled,
+            app,
+        }
+    }
+}
 
 fn in_app_bundle(pid: i32) -> bool {
     let mut buffer = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];

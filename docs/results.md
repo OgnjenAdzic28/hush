@@ -49,12 +49,34 @@ Fixed costs others publish, against Hush's measured ones:
 | Running an AppleScript | `osascript` ~67 to 80 ms cold | 17 µs warm, in process |
 | Window capture | ScreenCaptureKit 87 to 155 ms (open-computer-use, macOS 27) | see above |
 
+## Measured: acting on a real app
+
+`crates/hush/tests/live_act.rs` drives the fixture app in `bench/fixture`, which logs every input
+it gets, including activation. Run on 15 Nov 2026 while the owner worked in a full-screen app:
+
+| Route | Result |
+|---|---|
+| Two presses on a button | the fixture counted exactly 2 |
+| Typing into a text field (Accessibility insert) | `hello` arrived, no key events sent |
+| Checkbox press | on |
+| `pick` on a popup | the option was chosen (see the settle note below) |
+| `key cmd+k` on a background app | ran the menu item with that shortcut |
+| `menu Test > Reset` | ran the item, no menu opened |
+| 7 steps in one `act` call | 0.24 to 0.25 s in total, including the settle wait after each |
+| The fixture activated / the user's front app changed / clipboard changed | never / never / never |
+
+Pointer events reach the fixture's window at the right window-local point (checked with the same
+stamping in a probe), but the full click recipe still needs a run on a normal Desktop: the
+workaround that makes the fixture visible from a full-screen Space also marks it hidden, and
+pointer routes refuse hidden apps by design.
+
+Found by this test and fixed: apps launched after Hush started were invisible (#37). Found and
+being fixed: `pick` answered before the popup's menu had closed, so its report was stale.
+
 ## Not measured yet
 
-- **Acting on real apps.** Accessibility actions, menus, Cmd shortcuts through menu items,
-  typing (Accessibility insert, process-only keys, and the synthetic key window for Chromium),
-  pointer clicks and scrolling are built to the reference recipes but have not been run against a
-  real app here, because that drives apps on the owner's Mac. Tracked in issue #25.
+- **Pointer clicks, scrolling and Chromium typing on a real app.** Built to the reference
+  recipes; the pointer routes need the live test on a normal Desktop. Tracked in issue #25.
 - **Cua Driver Bench v2.** Pass rate, model calls and median time for Hush need the bench running
   on macOS 27 and the owner's go-ahead. Until then the comparison above is Hush's fixed costs
   against others' published end-to-end results, which are different things.
