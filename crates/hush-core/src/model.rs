@@ -171,6 +171,24 @@ impl Role {
         )
     }
 
+    /// Things a person presses, whose name already says what their icons
+    /// and labels show.
+    pub fn is_control(self) -> bool {
+        matches!(
+            self,
+            Role::Button
+                | Role::MenuButton
+                | Role::Disclosure
+                | Role::Link
+                | Role::CheckBox
+                | Role::Radio
+                | Role::Switch
+                | Role::Tab
+                | Role::MenuItem
+                | Role::PopUp
+        )
+    }
+
     /// Roles that only group other elements and are worth a line only when named.
     pub fn is_transparent(self) -> bool {
         matches!(
@@ -203,13 +221,13 @@ impl Role {
 }
 
 macro_rules! flags {
-    ($(#[$meta:meta])* $name:ident { $($flag:ident = $bit:expr),* $(,)? }) => {
+    ($(#[$meta:meta])* $name:ident { $($(#[$flag_meta:meta])* $flag:ident = $bit:expr),* $(,)? }) => {
         $(#[$meta])*
         #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
         pub struct $name(pub u16);
 
         impl $name {
-            $(pub const $flag: $name = $name(1 << $bit);)*
+            $($(#[$flag_meta])* pub const $flag: $name = $name(1 << $bit);)*
 
             pub fn has(self, other: $name) -> bool {
                 self.0 & other.0 == other.0
@@ -241,6 +259,8 @@ flags! {
         HIDDEN = 6,
         EDITABLE = 7,
         BUSY = 8,
+        /// Outside the visible part of the window; its children weren't read.
+        OFFSCREEN = 9,
     }
 }
 
@@ -275,6 +295,9 @@ pub struct Node<H> {
     pub actions: Actions,
     /// Index of the parent in `Snapshot::nodes`; `None` for the root.
     pub parent: Option<usize>,
+    /// Children the platform counted but didn't read: rows scrolled out of
+    /// view, or elements past its read budget.
+    pub unread: usize,
 }
 
 /// The elements of one window at one moment, in pre-order (parents first).

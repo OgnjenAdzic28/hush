@@ -1,0 +1,23 @@
+[package]
+name = "hush-macos"
+description = "The macOS platform for Hush: Accessibility, background input, capture and AppleScript"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hush-core = { path = "../hush-core" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+objc2 = "0.6"
+objc2-core-foundation = "0.3.2"
+objc2-application-services = "0.3.2"
+objc2-core-graphics = "0.3.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSString", "NSArray", "NSURL", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "libc", "NSWorkspace", "NSRunningApplication"] }
+
+[lints]
+workspace = true

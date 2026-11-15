@@ -12,6 +12,7 @@ pub fn node(handle: u32, role: Role, name: &str, parent: Option<usize>) -> Node<
         states: States::default(),
         actions: Actions::default(),
         parent,
+        unread: 0,
     }
 }
 

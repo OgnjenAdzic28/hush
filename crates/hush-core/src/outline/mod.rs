@@ -8,7 +8,7 @@
 use std::fmt::Write;
 use std::hash::Hash;
 
-use crate::model::{Snapshot, States};
+use crate::model::{Role, Snapshot, States};
 use crate::refs::{Ref, RefTable};
 
 mod plan;
@@ -82,8 +82,12 @@ impl View {
                 view.focused = Some(r);
             }
             if plan.hidden_rows[index] > 0 {
+                let what = match node.role {
+                    Role::List | Role::Table | Role::Outline => "rows",
+                    _ => "not read",
+                };
                 view.elided
-                    .push((r, format!("{} more rows", plan.hidden_rows[index])));
+                    .push((r, format!("{} more {what}", plan.hidden_rows[index])));
             }
             if plan.offscreen[index] > 0 {
                 view.elided.push((
@@ -144,7 +148,6 @@ pub fn approx_tokens(text: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Role;
     use crate::test_support::{framed, node, snapshot};
 
     fn outline(snapshot: &Snapshot<u32>) -> String {
@@ -203,6 +206,42 @@ mod tests {
         assert!(!text.contains("r25"), "{text}");
         assert!(text.contains("    … 5 more rows\n"), "{text}");
         assert!(text.contains("  … 1 more outside the window\n"), "{text}");
+    }
+
+    #[test]
+    fn folds_what_a_control_or_a_labelled_group_already_says() {
+        let mut offscreen = node(9, Role::Button, "Below", Some(0));
+        offscreen.states = States::OFFSCREEN;
+        let mut table = node(10, Role::Table, "Mail", Some(0));
+        table.unread = 40;
+        let ui = snapshot(vec![
+            node(1, Role::Window, "W", None),
+            node(2, Role::Link, "Inbox (3 unread)", Some(0)),
+            node(3, Role::Image, "Inbox icon", Some(1)),
+            node(4, Role::Text, "3", Some(1)),
+            node(5, Role::Group, "alice , lunch at noon? , 9:41", Some(0)),
+            node(6, Role::Text, "lunch at noon?", Some(4)),
+            node(7, Role::Group, "", Some(0)),
+            node(8, Role::Text, "M", Some(6)),
+            offscreen,
+            table,
+            node(11, Role::Group, "", Some(0)),
+            node(12, Role::Text, "U", Some(10)),
+            node(13, Role::Group, "", Some(0)),
+            node(14, Role::Text, "S", Some(12)),
+        ]);
+        assert_eq!(
+            outline(&ui),
+            "# App · window \"W\" 800x600\n\
+             e1 window \"W\"\n\
+             \x20 l1 link \"Inbox (3 unread)\"\n\
+             \x20 e2 group \"alice , lunch at noon? , 9:41\"\n\
+             \x20 e3 text \"M\"\n\
+             \x20 e4 table \"Mail\"\n\
+             \x20   … 40 more rows\n\
+             \x20 e5 text \"U S\"\n\
+             \x20 … 1 more outside the window\n"
+        );
     }
 
     #[test]
