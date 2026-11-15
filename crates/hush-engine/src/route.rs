@@ -63,9 +63,9 @@ pub(crate) fn route<'a, H: 'a>(
             };
             Route::only(Op::Scroll { x, y, dx, dy })
         }
-        Step::Pick { .. } | Step::Wait { .. } => {
+        Step::Pick { .. } | Step::Wait { .. } | Step::Drag { .. } => {
             return Err(Error::Failed(
-                "pick and wait are run by the batch, not routed".into(),
+                "pick, wait and drag are run by the batch, not routed".into(),
             ));
         }
     })
@@ -106,7 +106,7 @@ fn click<'a, H: 'a>(
     })
 }
 
-fn point<'a, H: 'a>(
+pub(crate) fn point<'a, H: 'a>(
     target: &Target,
     node: &impl Fn(Ref) -> Result<&'a Node<H>>,
 ) -> Result<(f64, f64)> {

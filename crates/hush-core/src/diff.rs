@@ -13,6 +13,9 @@ pub struct Diff {
     pub removed: Vec<Line>,
     pub changed: Vec<(Line, Line)>,
     pub added: Vec<Line>,
+    /// Elements still there but in a new place among the rest (a reordered
+    /// list), each with the ref now just before it (`None`: now first).
+    pub moved: Vec<(Line, Option<Ref>)>,
 }
 
 impl Diff {
@@ -43,6 +46,7 @@ impl Diff {
             removed,
             changed,
             added,
+            moved: moved(old, new),
         }
     }
 
@@ -52,12 +56,13 @@ impl Diff {
             && self.removed.is_empty()
             && self.changed.is_empty()
             && self.added.is_empty()
+            && self.moved.is_empty()
     }
 
     /// True when most of the window changed (a new page, a new pane), so the
     /// full outline is shorter to read than the list of changes.
     pub fn replaces(&self, new: &View) -> bool {
-        let touched = self.removed.len() + self.changed.len() + self.added.len();
+        let touched = self.removed.len() + self.changed.len() + self.added.len() + self.moved.len();
         touched > 8 && touched * 2 > new.lines.len()
     }
 
@@ -96,6 +101,16 @@ impl Diff {
                 );
             }
         }
+        for (line, after) in &self.moved {
+            match after {
+                Some(r) => {
+                    let _ = writeln!(out, "↕ {} {} · now after {r}", line.r, line.head);
+                }
+                None => {
+                    let _ = writeln!(out, "↕ {} {} · now first", line.r, line.head);
+                }
+            }
+        }
         let base = self.added.iter().map(|line| line.depth).min().unwrap_or(0);
         for line in &self.added {
             let relative = Line {
@@ -106,6 +121,57 @@ impl Diff {
         }
         out
     }
+}
+
+/// Lines in both views whose order among the others changed. The lines
+/// that keep their relative order are the longest run in increasing old
+/// position; everything else in both views moved.
+fn moved(old: &View, new: &View) -> Vec<(Line, Option<Ref>)> {
+    let position: HashMap<Ref, usize> = old
+        .lines
+        .iter()
+        .enumerate()
+        .map(|(i, line)| (line.r, i))
+        .collect();
+    let common: Vec<(usize, usize)> = new
+        .lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| position.get(&line.r).map(|&was| (i, was)))
+        .collect();
+    let stays = longest_increasing(&common.iter().map(|&(_, was)| was).collect::<Vec<_>>());
+    common
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| !stays[*k])
+        .map(|(_, &(i, _))| {
+            let after = i.checked_sub(1).map(|p| new.lines[p].r);
+            (new.lines[i].clone(), after)
+        })
+        .collect()
+}
+
+/// Marks one longest strictly increasing subsequence of `values`.
+fn longest_increasing(values: &[usize]) -> Vec<bool> {
+    // tails[k]: index of the smallest last value of an increasing run of length k + 1.
+    let mut tails: Vec<usize> = Vec::new();
+    let mut previous: Vec<Option<usize>> = vec![None; values.len()];
+    for (i, &v) in values.iter().enumerate() {
+        let k = tails.partition_point(|&t| values[t] < v);
+        previous[i] = k.checked_sub(1).map(|k| tails[k]);
+        if k == tails.len() {
+            tails.push(i);
+        } else {
+            tails[k] = i;
+        }
+    }
+    let mut keep = vec![false; values.len()];
+    let mut at = tails.last().copied();
+    while let Some(i) = at {
+        keep[i] = true;
+        at = previous[i];
+    }
+    keep
 }
 
 fn or_dash(tail: &str) -> &str {
@@ -151,6 +217,47 @@ mod tests {
              + e2 sheet \"Save changes?\"\n\
              +   b2 button \"Save\" [disabled]\n"
         );
+    }
+
+    #[test]
+    fn a_reordered_list_reports_only_what_moved() {
+        let mut table = RefTable::default();
+        let options = OutlineOptions::default();
+        let rows = |order: [(u32, &str); 4]| {
+            let mut nodes = vec![node(1, Role::Window, "W", None)];
+            nodes.extend(order.map(|(h, name)| node(h, Role::Row, name, Some(0))));
+            snapshot(nodes)
+        };
+        let (old, _) = View::build(
+            &rows([(2, "Send"), (3, "Print"), (4, "Update"), (5, "Order")]),
+            &mut table,
+            &options,
+        );
+        let (new, _) = View::build(
+            &rows([(3, "Print"), (2, "Send"), (4, "Update"), (5, "Order")]),
+            &mut table,
+            &options,
+        );
+        let diff = Diff::between(&old, &new);
+        // A swap reads as either row moving; one line is enough.
+        assert_eq!(diff.render(), "↕ i2 row \"Print\" · now after e1\n");
+
+        let (last, _) = View::build(
+            &rows([(5, "Order"), (3, "Print"), (2, "Send"), (4, "Update")]),
+            &mut table,
+            &options,
+        );
+        assert_eq!(
+            Diff::between(&new, &last).render(),
+            "↕ i4 row \"Order\" · now after e1\n"
+        );
+    }
+
+    #[test]
+    fn longest_increasing_keeps_the_most_in_place() {
+        assert_eq!(longest_increasing(&[1, 0, 2, 3]), [false, true, true, true]);
+        assert_eq!(longest_increasing(&[3, 0, 1, 2]), [false, true, true, true]);
+        assert_eq!(longest_increasing(&[]), Vec::<bool>::new());
     }
 
     #[test]

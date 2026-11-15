@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use hush_core::{
     AppInfo, Condition, Diff, Error, Key, KeyCombo, NamedKey, Op, Platform, Reason, Ref, Result,
-    Role, Step, WindowInfo,
+    Role, Step, WindowInfo, timeline,
 };
 
 use crate::mirror::Mirror;
@@ -127,6 +127,49 @@ impl<P: Platform> Engine<P> {
             Step::Wait { until, within } => {
                 self.wait_for(app, window, until, *within, dirty)?;
                 Ok(None)
+            }
+            Step::Drag { from, to } => {
+                for target in [from, to] {
+                    if let hush_core::Target::Ref(r) = target
+                        && (*dirty || self.mirror(app, window).node(*r).is_none())
+                    {
+                        self.refresh(app, window, dirty)?;
+                    }
+                }
+                let mirror = self.mirror(app, window);
+                let node = |r: Ref| {
+                    mirror.node(r).ok_or_else(|| {
+                        Error::Stale(format!("{r} isn't in the window any more; observe again"))
+                    })
+                };
+                let start = crate::route::point(from, &node)?;
+                let mut end = crate::route::point(to, &node)?;
+                // Onto a ref, the dragged item takes its place: the upper
+                // part of the target when moving up, the lower part when
+                // moving down, so a list drops it before or after.
+                if let hush_core::Target::Ref(r) = to
+                    && let Some(frame) = node(*r)?.frame
+                {
+                    end.1 += if end.1 < start.1 {
+                        -frame.h / 4.0
+                    } else {
+                        frame.h / 4.0
+                    };
+                }
+                let events = timeline::drag(start, end);
+                let pace = self.paces.entry(app.pid.unwrap_or(0)).or_default();
+                let pending = wait::begin(&self.platform, app, pace);
+                self.platform.play(app, window, &events)?;
+                let outcome = pending.finish(
+                    &self.platform,
+                    app,
+                    self.paces.entry(app.pid.unwrap_or(0)).or_default(),
+                );
+                *dirty = true;
+                Ok(Some(format!(
+                    "dragged, settled in {} ms",
+                    outcome.after.as_millis()
+                )))
             }
             Step::Pick { r, option } => {
                 let opened = Step::Click {

@@ -85,6 +85,11 @@ pub enum Step {
         until: Condition,
         within: Duration,
     },
+    /// Press on one place, move to another while holding, release there.
+    Drag {
+        from: Target,
+        to: Target,
+    },
     /// Move the app's windows to Hush's lane: a display the user can't see,
     /// where they render and take pointer input without being on screen.
     Lane,
@@ -96,7 +101,7 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 /// Syntax help for tool descriptions. Kept short: it rides on every request.
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
-scroll REF up|down|left|right [N] · show REF · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
+scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
 lane (move the app's windows off screen, where they still render and take clicks)";
 
 impl Step {
@@ -108,6 +113,7 @@ impl Step {
             "click" => click(rest, Button::Left, 1)?,
             "double" => click(rest, Button::Left, 2)?,
             "right" => click(rest, Button::Right, 1)?,
+            "drag" => drag(rest)?,
             "set" => {
                 let (r, value) = ref_then_rest(rest)?;
                 Step::Set {
@@ -182,6 +188,17 @@ fn click(rest: &str, button: Button, count: u8) -> Result<Step, String> {
         button,
         count,
     })
+}
+
+fn drag(rest: &str) -> Result<Step, String> {
+    let words: Vec<&str> = rest.split_whitespace().filter(|w| *w != "to").collect();
+    match words[..] {
+        [from, to] => Ok(Step::Drag {
+            from: target(from)?,
+            to: target(to)?,
+        }),
+        _ => Err(format!("drag needs FROM to TO, got '{rest}'")),
+    }
 }
 
 fn scroll(rest: &str) -> Result<Step, String> {
@@ -315,6 +332,25 @@ mod tests {
 
     fn r(text: &str) -> Ref {
         Ref::parse(text).unwrap()
+    }
+
+    #[test]
+    fn drags_take_two_targets_with_an_optional_to() {
+        assert_eq!(
+            Step::parse("drag i2 to i1").unwrap(),
+            Step::Drag {
+                from: Target::Ref(r("i2")),
+                to: Target::Ref(r("i1")),
+            }
+        );
+        assert_eq!(
+            Step::parse("drag 10,20 30,40").unwrap(),
+            Step::Drag {
+                from: Target::Point(10.0, 20.0),
+                to: Target::Point(30.0, 40.0),
+            }
+        );
+        assert!(Step::parse("drag i2").unwrap_err().contains("FROM to TO"));
     }
 
     #[test]

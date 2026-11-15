@@ -54,7 +54,9 @@ act TextEdit ["type t1 \" Done.\"", "key cmd+s"]
 
 Steps: `click REF|X,Y`, `double REF`, `right REF`, `set REF VALUE`, `type [REF] TEXT`,
 `key COMBO [xN]`, `menu A > B`, `pick REF OPTION`, `select REF`, `focus REF`,
-`scroll REF up|down [N]`, `show REF`, `wait gone REF | REF | text "T" | 500ms [within 10s]`.
+`scroll REF up|down [N]`, `show REF`, `drag REF|X,Y to REF|X,Y`,
+`wait gone REF | REF | text "T" | 500ms [within 10s]`. A reordered list shows in the reply as
+`↕ i5 row "Test projector" · now after b1`.
 
 Timeline events, one per line: `MS down KEY`, `MS up KEY`, `MS tap KEY [HOLD]`, `MS down X,Y`,
 `MS move X,Y`, `MS up X,Y`, `MS tap X,Y [HOLD]`. The agent plans the whole sequence once and Hush
