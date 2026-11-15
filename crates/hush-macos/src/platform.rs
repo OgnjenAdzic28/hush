@@ -24,6 +24,8 @@ pub struct MacPlatform {
     watcher: Watcher,
     /// Window elements by window id, refreshed on every `windows` call.
     windows: RefCell<HashMap<u64, Element>>,
+    /// Windows on other Spaces found without `AXWindows`.
+    off_space: RefCell<windows::Known>,
     scripts: RefCell<Scripts>,
     /// Chromium and Electron apps whose web content was switched on.
     web_enabled: RefCell<HashSet<i32>>,
@@ -44,6 +46,7 @@ impl MacPlatform {
         Ok(MacPlatform {
             watcher: Watcher::start(),
             windows: RefCell::default(),
+            off_space: RefCell::default(),
             scripts: RefCell::default(),
             web_enabled: RefCell::default(),
         })
@@ -125,6 +128,10 @@ impl Platform for MacPlatform {
 
     fn apps(&self, query: Option<&str>) -> Result<Vec<AppInfo>> {
         let mut found = apps::running();
+        // From now on, windows these apps open anywhere are caught.
+        for pid in found.iter().filter_map(|app| app.pid) {
+            self.watcher.watch_windows(pid as i32);
+        }
         if let Some(query) = query {
             let wanted = query.to_lowercase();
             found.retain(|app| {
@@ -143,7 +150,14 @@ impl Platform for MacPlatform {
     fn windows(&self, app: &AppInfo) -> Result<Vec<WindowInfo>> {
         self.enable_web_content(app);
         let pid = app.pid.map_or(0, |p| p as i32);
-        let listed = windows::list(&Self::app_element(app)?, pid);
+        self.watcher.watch_windows(pid);
+        let created = self.watcher.take_created(pid);
+        let listed = windows::list(
+            &Self::app_element(app)?,
+            pid,
+            created,
+            &mut self.off_space.borrow_mut(),
+        );
         let mut cache = self.windows.borrow_mut();
         cache.clear();
         Ok(listed

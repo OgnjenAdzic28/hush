@@ -11,13 +11,13 @@ use std::thread;
 use std::time::Duration;
 
 use hush_core::{Button, Error, Result};
-use objc2_app_kit::NSRunningApplication;
 use objc2_core_foundation::CGPoint;
 use objc2_core_graphics::{
     CGEvent, CGEventField, CGEventSource, CGEventSourceStateID, CGEventType, CGMouseButton,
     CGScrollEventUnit,
 };
 
+use crate::apps;
 use crate::private::{self, SyntheticFocus};
 
 /// Gaps inside the click recipe. They can't be zero (every click failed at
@@ -75,14 +75,15 @@ pub(crate) fn click(target: &Target, x: f64, y: f64, button: Button, count: u8) 
     );
     let at = (x, y);
     let primer = (-1.0, -1.0);
-    // The synthetic-activate record would make a hidden app show itself;
-    // Hush doesn't unhide apps on its own.
-    if !target.frontmost
-        && NSRunningApplication::runningApplicationWithProcessIdentifier(target.pid)
-            .is_some_and(|app| app.isHidden())
-    {
+    // A hidden app gets the events (checked on macOS 27.2: they arrive at
+    // the right window-local point) but AppKit doesn't hand them to its
+    // views, and Hush doesn't unhide apps on its own. Accessibility steps
+    // still work there.
+    if !target.frontmost && apps::is_hidden(target.pid) {
         return Err(Error::Unsupported(
-            "the app is hidden; show it first, Hush won't unhide it on its own".into(),
+            "the app is hidden, and a hidden app ignores pointer input; use a step on a ref \
+             (click, set, type, pick), which works while it stays hidden"
+                .into(),
         ));
     }
     let focus = (!target.frontmost)

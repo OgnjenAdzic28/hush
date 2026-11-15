@@ -177,6 +177,17 @@ fn bundle_id(path: &Path) -> Option<String> {
     Some(after[start..end].trim().to_owned())
 }
 
+/// Whether the app is hidden (cmd+H, or a lane tool such as Doorman hid it).
+/// Asked through Accessibility each time: `NSRunningApplication.isHidden`
+/// is only refreshed by this process's main run loop, which Hush doesn't run.
+pub(crate) fn is_hidden(pid: i32) -> bool {
+    crate::ax::Element::application(pid)
+        .value("AXHidden")
+        .ok()
+        .and_then(|v| crate::cf::boolean(&v))
+        .unwrap_or(false)
+}
+
 /// Chromium and Electron apps (and Chromium Embedded Framework ones) need
 /// their web content switched on and keys delivered to a key window.
 pub(crate) fn is_chromium(app: &AppInfo) -> bool {

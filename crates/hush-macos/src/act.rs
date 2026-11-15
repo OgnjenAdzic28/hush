@@ -7,7 +7,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hush_core::{AppInfo, Error, Op, Result, WindowInfo};
-use objc2_app_kit::NSRunningApplication;
 use objc2_application_services::{AXError, AXValue, AXValueType};
 use objc2_core_foundation::{CFBoolean, CFNumber, CFRange, CFRetained, CFString, CFType};
 
@@ -101,7 +100,11 @@ pub(crate) fn perform_action(element: &Element, action: &str) -> Result<()> {
 
 /// Sets a boolean attribute to true.
 pub(crate) fn set_flag(element: &Element, attribute: &str) -> Result<()> {
-    set(element, attribute, CFBoolean::new(true))
+    set_bool(element, attribute, true)
+}
+
+pub(crate) fn set_bool(element: &Element, attribute: &str, value: bool) -> Result<()> {
+    set(element, attribute, CFBoolean::new(value))
 }
 
 fn set(element: &Element, attribute: &str, value: &CFType) -> Result<()> {
@@ -220,9 +223,7 @@ fn with_keys(target: &Target<'_>, app_element: &Element, post: impl FnOnce()) ->
         return Ok(());
     }
     let pointer = target.pointer()?;
-    if NSRunningApplication::runningApplicationWithProcessIdentifier(pointer.pid)
-        .is_some_and(|app| app.isHidden())
-    {
+    if apps::is_hidden(pointer.pid) {
         return Err(Error::Unsupported(format!(
             "{} is hidden; Hush doesn't unhide apps on its own, so show it first",
             target.app.name

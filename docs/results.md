@@ -65,13 +65,20 @@ it gets, including activation. Run on 15 Nov 2026 while the owner worked in a fu
 | 7 steps in one `act` call | 0.24 to 0.25 s in total, including the settle wait after each |
 | The fixture activated / the user's front app changed / clipboard changed | never / never / never |
 
-Pointer events reach the fixture's window at the right window-local point (checked with the same
-stamping in a probe), but the full click recipe still needs a run on a normal Desktop: the
-workaround that makes the fixture visible from a full-screen Space also marks it hidden, and
-pointer routes refuse hidden apps by design.
+Run again on 15 Nov 2026 on a normal Desktop with Doorman running. Doorman hides every app an
+agent launches, so the fixture was hidden the whole time:
 
-Found by this test and fixed: apps launched after Hush started were invisible (#37). Found and
-being fixed: `pick` answered before the popup's menu had closed, so its report was stale.
+| Route | Result |
+|---|---|
+| The 7 Accessibility steps above | all landed, 0.58 to 0.66 s for the batch |
+| A second window the fixture opens after launch | found and pressed |
+| Pointer click and scroll | refused with a reason: a hidden app gets the events at the right point, but AppKit doesn't hand them to its views |
+| The fixture activated or unhidden while Hush acted / the user's front app changed | never / never |
+
+Found by these runs and fixed: apps launched after Hush started were invisible (#37); `pick`
+answered before the popup's menu had closed (#39); the "hidden" seen earlier was Doorman, not the
+fixture's Space settings; a fixture started as a child process can activate itself at launch, so
+the test now opens it through LaunchServices in the background.
 
 ## Not measured yet
 
@@ -82,4 +89,7 @@ being fixed: `pick` answered before the popup's menu had closed, so its report w
   against others' published end-to-end results, which are different things.
 - **Settle timing on real apps.** The settle rules are tested on a fake clock; how much waiting
   they save on real apps is measured only once acting is.
-- Windows on other Spaces or in full screen aren't listed yet (issue #26).
+- **Windows on other Spaces.** Reached by window-created notifications (any window opened after
+  Hush started watching the app), the app's main and focused window, earlier finds and remote
+  tokens. Still out of reach: an older window there that no assistive app has asked about
+  (see `docs/notes/spaces.md`).

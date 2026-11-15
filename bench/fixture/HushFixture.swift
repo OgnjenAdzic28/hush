@@ -20,6 +20,7 @@ final class Canvas: NSView {
 
 final class Delegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
   var window: NSWindow!
+  var later: NSWindow?
   var count = 0
   let label = NSTextField(labelWithString: "Count 0")
   let field = NSTextField(frame: NSRect(x: 20, y: 300, width: 300, height: 24))
@@ -47,23 +48,35 @@ final class Delegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
       return e
     }
     let canvas = Canvas(frame: NSRect(x: 20, y: 20, width: 440, height: 180)); v.addSubview(canvas)
-    // On every Space, so the test can run while the owner is in a full-screen
-    // app (Accessibility can't see windows on an inactive Space). Side effect
-    // seen on macOS 27.2: the app then reports itself hidden, so the pointer
-    // routes, which refuse hidden apps, only run on a normal Desktop.
-    window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    // An ordinary window: behind everything on the user's Desktop, or on the
+    // Desktop's Space while the user is in a full-screen app, where only
+    // Hush's off-Space routes can reach it.
     window.orderBack(nil)
+    // A second window a moment later, after Hush has started watching: in a
+    // full-screen app's Space it is only reachable through its creation
+    // notification.
+    Timer.scheduledTimer(withTimeInterval: 1, repeats: false) { _ in
+      let later = NSWindow(contentRect: NSRect(x: 260, y: 160, width: 320, height: 160), styleMask: [.titled], backing: .buffered, defer: false)
+      later.title = "Later"; later.isReleasedWhenClosed = false
+      let button = NSButton(title: "Later button", target: self, action: #selector(self.laterPressed)); button.frame = NSRect(x: 20, y: 60, width: 160, height: 30)
+      later.contentView!.addSubview(button)
+      later.orderBack(nil); self.later = later
+      log("later window")
+    }
     log("ready")
   }
   @objc func increment() { count += 1; label.stringValue = "Count \(count)"; log("increment \(count)") }
   @objc func toggled() { log("checkbox \(check.state == .on ? "on" : "off")") }
   @objc func picked() { log("picked \(popup.titleOfSelectedItem ?? "")") }
   @objc func mark() { log("menu mark") }
+  @objc func laterPressed() { log("later pressed") }
   @objc func reset() { log("menu reset") }
   func controlTextDidChange(_ n: Notification) { log("field \(field.stringValue)") }
   func controlTextDidEndEditing(_ n: Notification) { log("field end \(field.stringValue)") }
   func applicationDidBecomeActive(_ n: Notification) { log("ACTIVATED") }
   func applicationDidResignActive(_ n: Notification) { log("resigned active") }
+  func applicationDidHide(_ n: Notification) { log("hidden") }
+  func applicationDidUnhide(_ n: Notification) { log("UNHIDDEN") }
 }
 let app = NSApplication.shared
 let d = Delegate(); app.delegate = d

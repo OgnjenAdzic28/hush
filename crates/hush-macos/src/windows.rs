@@ -1,8 +1,24 @@
 //! An app's windows: the ones Accessibility lists, plus the ones the window
 //! server knows about on other Spaces.
+//!
+//! AppKit answers `AXWindows` with the app's windows on the current Spaces
+//! only (`+[NSCGSSpace currentManagedSpaces]`, traced on macOS 27.2), plus
+//! minimized ones; a hidden app lists all of them. For every other window
+//! the server reports, the cheapest route that works is used: an element
+//! found earlier, one from a window-created notification, the app's main
+//! and focused window (AppKit answers those whatever their Space), and a
+//! remote-token lookup.
+//!
+//! What stays out of reach: a window opened on another Space before Hush
+//! watched the app, that isn't its main or focused window and that no
+//! assistive app has asked about. AppKit gives a window an element id only
+//! when it first hands it out, and a token lookup needs that id. Hiding the
+//! app would list it, but showing an app again from outside activates it
+//! (`AXHidden` calls `-[NSApplication unhide:]`), so Hush doesn't.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use hush_core::{Rect, WindowInfo};
 
@@ -11,24 +27,70 @@ use crate::cf;
 use crate::private;
 use crate::server::{self, Which};
 
-/// The app's windows with their elements, main window first.
-pub(crate) fn list(app: &Element, pid: i32) -> Vec<(WindowInfo, Element)> {
+/// How long a window no route could reach is left alone before trying
+/// again. The token scan costs 34 to 88 ms, so it isn't repeated on every
+/// call; the window can become reachable later (the user visits its Space).
+const RETRY_AFTER: Duration = Duration::from_secs(10);
+
+/// Off-Space window elements found by any route but `AXWindows`, by (pid,
+/// window id), kept while their window exists so later calls don't search
+/// again.
+pub(crate) type Known = HashMap<(i32, u32), Element>;
+
+/// The app's windows with their elements, main window first. `created` are
+/// the windows the app announced since the last call.
+pub(crate) fn list(
+    app: &Element,
+    pid: i32,
+    created: Vec<Element>,
+    known: &mut Known,
+) -> Vec<(WindowInfo, Element)> {
     let mut elements = app.elements("AXWindows");
     let listed: Vec<u32> = elements.iter().filter_map(private::window_id).collect();
-    let missing: Vec<u32> = server::windows(Which::All)
+    let on_server: Vec<u32> = server::windows(Which::All)
         .into_iter()
         .filter(|w| w.pid == pid && w.is_document_sized())
         .map(|w| w.id)
-        .filter(|id| !listed.contains(id) && !unresolvable(pid, *id))
         .collect();
+    known.retain(|(owner, id), _| *owner != pid || on_server.contains(id));
+    for element in created {
+        if let Some(id) = private::window_id(&element) {
+            known.insert((pid, id), element);
+        }
+    }
+    let mut missing: Vec<u32> = Vec::new();
+    for id in on_server.iter().filter(|id| !listed.contains(id)) {
+        match known.get(&(pid, *id)) {
+            Some(element) => elements.push(element.clone()),
+            None if !recently_unreachable(pid, *id) => missing.push(*id),
+            None => {}
+        }
+    }
     if !missing.is_empty() {
-        let found = private::windows_by_token(pid, &missing);
+        let mut found: Vec<(u32, Element)> = ["AXMainWindow", "AXFocusedWindow"]
+            .into_iter()
+            .filter_map(|attribute| app.element(attribute))
+            .filter_map(|element| Some((private::window_id(&element)?, element)))
+            .filter(|(id, _)| missing.contains(id))
+            .collect();
+        found.dedup_by_key(|(id, _)| *id);
+        let left: Vec<u32> = missing
+            .iter()
+            .copied()
+            .filter(|id| !found.iter().any(|(known, _)| known == id))
+            .collect();
+        if !left.is_empty() {
+            found.extend(private::windows_by_token(pid, &left));
+        }
         for id in &missing {
             if !found.iter().any(|(known, _)| known == id) {
-                mark_unresolvable(pid, *id);
+                mark_unreachable(pid, *id);
             }
         }
-        elements.extend(found.into_iter().map(|(_, element)| element));
+        for (id, element) in found {
+            known.insert((pid, id), element.clone());
+            elements.push(element);
+        }
     }
     let mut windows: Vec<(WindowInfo, Element)> = elements
         .into_iter()
@@ -75,20 +137,21 @@ fn fallback_id(window: &Element) -> u64 {
     hasher.finish() | (1 << 63)
 }
 
-/// Window ids the token scan didn't find, so later calls don't scan again.
-fn unresolved() -> &'static Mutex<HashSet<(i32, u32)>> {
-    static UNRESOLVED: OnceLock<Mutex<HashSet<(i32, u32)>>> = OnceLock::new();
-    UNRESOLVED.get_or_init(Mutex::default)
+/// When each window no route could reach was last tried.
+fn unreachable() -> &'static Mutex<HashMap<(i32, u32), Instant>> {
+    static UNREACHABLE: OnceLock<Mutex<HashMap<(i32, u32), Instant>>> = OnceLock::new();
+    UNREACHABLE.get_or_init(Mutex::default)
 }
 
-fn unresolvable(pid: i32, id: u32) -> bool {
-    unresolved()
-        .lock()
-        .is_ok_and(|set| set.contains(&(pid, id)))
+fn recently_unreachable(pid: i32, id: u32) -> bool {
+    unreachable().lock().is_ok_and(|map| {
+        map.get(&(pid, id))
+            .is_some_and(|at| at.elapsed() < RETRY_AFTER)
+    })
 }
 
-fn mark_unresolvable(pid: i32, id: u32) {
-    if let Ok(mut set) = unresolved().lock() {
-        set.insert((pid, id));
+fn mark_unreachable(pid: i32, id: u32) {
+    if let Ok(mut map) = unreachable().lock() {
+        map.insert((pid, id), Instant::now());
     }
 }
