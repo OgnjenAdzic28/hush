@@ -4,6 +4,12 @@
 //! One background thread runs a Core Foundation run loop holding one
 //! AXObserver per watched app. The callback only bumps a counter, so it never
 //! slows the app or the run loop down.
+//!
+//! Every app Hush lists also gets a light observer for new windows only. A
+//! window that opens on another Space never shows up in `AXWindows`
+//! (see `windows`), but its creation notification carries its element, and
+//! receiving it gives the window an element id that later token lookups
+//! find.
 
 use std::collections::HashMap;
 use std::ffi::c_void;
@@ -44,10 +50,21 @@ const NOTIFICATIONS: [&str; 17] = [
 ];
 
 type Counts = Mutex<HashMap<i32, Activity>>;
+type Created = Mutex<HashMap<i32, Vec<SentElement>>>;
 
-struct Counter {
-    pid: i32,
-    counts: Arc<Counts>,
+/// An element handed from the event thread to the caller's thread.
+struct SentElement(Element);
+
+// SAFETY: an AXUIElement is an immutable reference to a remote UI object;
+// the Accessibility API may be called on it from any thread.
+unsafe impl Send for SentElement {}
+
+/// What one observer's callback does with its notifications.
+enum Counter {
+    /// Counts every notification for the settle wait.
+    Activity { pid: i32, counts: Arc<Counts> },
+    /// Keeps the element of each window the app creates.
+    Windows { pid: i32, created: Arc<Created> },
 }
 
 /// The run loop handle, which is safe to use from any thread for adding
@@ -59,10 +76,12 @@ unsafe impl Send for Loop {}
 
 pub(crate) struct Watcher {
     counts: Arc<Counts>,
+    created: Arc<Created>,
     run_loop: Loop,
     thread: Thread,
     /// Observers stay alive (and registered) for as long as the watcher.
     observers: Mutex<HashMap<i32, CFRetained<AXObserver>>>,
+    window_observers: Mutex<HashMap<i32, CFRetained<AXObserver>>>,
 }
 
 impl std::fmt::Debug for Watcher {
@@ -94,9 +113,11 @@ impl Watcher {
         let run_loop = receiver.recv().expect("event thread starts");
         Watcher {
             counts: Arc::default(),
+            created: Arc::default(),
             run_loop,
             thread: handle.thread().clone(),
             observers: Mutex::default(),
+            window_observers: Mutex::default(),
         }
     }
 
@@ -106,22 +127,65 @@ impl Watcher {
         if observers.contains_key(&pid) {
             return;
         }
+        let counter = Counter::Activity {
+            pid,
+            counts: Arc::clone(&self.counts),
+        };
+        let Some(observer) = self.observe(pid, &NOTIFICATIONS, counter) else {
+            return;
+        };
+        self.counts
+            .lock()
+            .expect("counts lock")
+            .entry(pid)
+            .or_default();
+        observers.insert(pid, observer);
+    }
+
+    /// Starts keeping the windows `pid` creates, if it isn't yet.
+    pub(crate) fn watch_windows(&self, pid: i32) {
+        let mut observers = self.window_observers.lock().expect("observer lock");
+        if observers.contains_key(&pid) {
+            return;
+        }
+        let counter = Counter::Windows {
+            pid,
+            created: Arc::clone(&self.created),
+        };
+        if let Some(observer) = self.observe(pid, &["AXWindowCreated"], counter) {
+            observers.insert(pid, observer);
+        }
+    }
+
+    /// The windows `pid` created since the last call.
+    pub(crate) fn take_created(&self, pid: i32) -> Vec<Element> {
+        self.created
+            .lock()
+            .expect("created lock")
+            .remove(&pid)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|sent| sent.0)
+            .collect()
+    }
+
+    fn observe(
+        &self,
+        pid: i32,
+        notifications: &[&str],
+        counter: Counter,
+    ) -> Option<CFRetained<AXObserver>> {
         let mut raw: *mut AXObserver = ptr::null_mut();
         // SAFETY: valid callback and out-pointer.
         let status = unsafe { AXObserver::create(pid, Some(callback), NonNull::from(&mut raw)) };
-        let Some(raw) = NonNull::new(raw).filter(|_| status == AXError::Success) else {
-            return;
-        };
+        let raw = NonNull::new(raw).filter(|_| status == AXError::Success)?;
         // SAFETY: AXObserverCreate follows the create rule.
         let observer = unsafe { CFRetained::from_raw(raw) };
 
-        // The counter lives as long as the process: one per watched app.
-        let counter = Box::into_raw(Box::new(Counter {
-            pid,
-            counts: Arc::clone(&self.counts),
-        }));
+        // The counter lives as long as the process: at most two per app.
+        let counter = Box::into_raw(Box::new(counter));
         let app = Element::application(pid);
-        for name in NOTIFICATIONS {
+        for name in notifications {
             let notification: CFRetained<CFString> = cf::cfstr(name);
             // SAFETY: observer and element are live; `counter` outlives them.
             let _ = unsafe { observer.add_notification(app.raw(), &notification, counter.cast()) };
@@ -134,12 +198,7 @@ impl Watcher {
             .add_source(Some(&source), unsafe { kCFRunLoopDefaultMode });
         self.run_loop.0.wake_up();
         self.thread.unpark();
-        self.counts
-            .lock()
-            .expect("counts lock")
-            .entry(pid)
-            .or_default();
-        observers.insert(pid, observer);
+        Some(observer)
     }
 
     pub(crate) fn activity(&self, pid: i32) -> Activity {
@@ -154,15 +213,32 @@ impl Watcher {
 
 unsafe extern "C-unwind" fn callback(
     _observer: NonNull<AXObserver>,
-    _element: NonNull<AXUIElement>,
+    element: NonNull<AXUIElement>,
     _notification: NonNull<CFString>,
     refcon: *mut c_void,
 ) {
     // SAFETY: refcon is the leaked `Counter` registered with this observer.
-    let counter = unsafe { &*refcon.cast::<Counter>() };
-    if let Ok(mut counts) = counter.counts.lock() {
-        let activity = counts.entry(counter.pid).or_default();
-        activity.events += 1;
-        activity.last = Some(Instant::now());
+    match unsafe { &*refcon.cast::<Counter>() } {
+        Counter::Activity { pid, counts } => {
+            if let Ok(mut counts) = counts.lock() {
+                let activity = counts.entry(*pid).or_default();
+                activity.events += 1;
+                activity.last = Some(Instant::now());
+            }
+        }
+        // Registered for window creation only, so every call is a new window.
+        Counter::Windows { pid, created } => {
+            // SAFETY: the element is live for the callback; retaining it
+            // keeps it past the call.
+            let element = Element::from_raw(unsafe { CFRetained::retain(element) });
+            if let Ok(mut created) = created.lock() {
+                let windows = created.entry(*pid).or_default();
+                // Bounded for an app nobody asks about: the oldest go first.
+                if windows.len() >= 64 {
+                    windows.remove(0);
+                }
+                windows.push(SentElement(element));
+            }
+        }
     }
 }
