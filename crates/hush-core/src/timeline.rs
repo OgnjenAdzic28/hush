@@ -133,7 +133,12 @@ fn parse_line(line: &str, events: &mut Vec<Timed>) -> Result<(), String> {
 fn millis(word: &str) -> Result<Duration, String> {
     let number = word.strip_suffix("ms").unwrap_or(word);
     match number.parse::<f64>() {
-        Ok(ms) if ms.is_finite() && ms >= 0.0 => Ok(Duration::from_secs_f64(ms / 1000.0)),
+        // Bounded before converting: a huge number would overflow Duration.
+        Ok(ms) if ms > MAX_LENGTH.as_secs_f64() * 1000.0 => Err(format!(
+            "{word} ms is past the longest timeline one call plays ({} s)",
+            MAX_LENGTH.as_secs()
+        )),
+        Ok(ms) if ms >= 0.0 => Ok(Duration::from_secs_f64(ms / 1000.0)),
         _ => Err(format!("'{word}' isn't a time in milliseconds")),
     }
 }
@@ -235,6 +240,10 @@ mod tests {
             ("0 down a\n5 tap b 10 20", "line 2"),
             ("0 down hyper+a", "unknown modifier"),
             ("700000 down a", "longest"),
+            ("1e300 down a", "longest"),
+            ("0 tap a 1e300", "longest"),
+            ("NaN down a", "isn't a time"),
+            ("inf down a", "longest"),
             ("# nothing", "no events"),
         ] {
             let error = parse(&lines(text)).unwrap_err();
