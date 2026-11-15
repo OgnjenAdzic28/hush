@@ -35,6 +35,8 @@ struct World {
     stray_item: bool,
     /// Saving closes the window.
     closes_on_save: bool,
+    /// Choosing an option leaves the popup's menu open until Escape.
+    menu_sticks: bool,
     closed: bool,
     ops: Vec<String>,
     activity: Activity,
@@ -187,8 +189,9 @@ impl Platform for Fake {
             Op::Press(H::Helvetica) => {
                 let mut world = self.world.borrow_mut();
                 world.font = "Helvetica";
-                world.menu_open = false;
+                world.menu_open = world.menu_sticks;
             }
+            Op::Key { .. } => self.world.borrow_mut().menu_open = false,
             Op::Type { text, .. } => self.world.borrow_mut().name.push_str(text),
             _ => {}
         }
@@ -358,4 +361,19 @@ fn pick_chooses_from_the_menu_it_opened_not_another_one() {
         .act("Editor", None, &steps(&["pick p1 Helvetica"]))
         .unwrap();
     assert_eq!(engine.platform().ops(), ["Press(Font)", "Press(Helvetica)"]);
+}
+
+#[test]
+fn a_menu_left_open_after_pick_is_closed_so_it_cannot_cover_the_user() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().menu_sticks = true;
+    engine.observe("Editor", ObserveOptions::default()).unwrap();
+    let report = engine
+        .act("Editor", None, &steps(&["pick p1 Helvetica"]))
+        .unwrap();
+    assert_eq!(
+        engine.platform().ops().last().unwrap(),
+        "Key { combo: KeyCombo { modifiers: Modifiers { cmd: false, shift: false, alt: false, ctrl: false, function: false }, key: Named(Escape) }, repeat: 1 }"
+    );
+    assert!(!report.contains("menuitem"), "{report}");
 }

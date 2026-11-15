@@ -16,6 +16,16 @@ use crate::mirror::Mirror;
 use crate::route::route;
 use crate::{Engine, OUTLINE_BUDGET, key, wait};
 
+/// The longest `pick` waits for the popup's menu to close after a choice.
+const MENU_CLOSE: Duration = Duration::from_millis(1500);
+
+fn escape() -> KeyCombo {
+    KeyCombo {
+        modifiers: Default::default(),
+        key: Key::Named(NamedKey::Escape),
+    }
+}
+
 /// How often a `wait` condition is checked when the app sends no events.
 const CONDITION_POLL: Duration = Duration::from_millis(50);
 
@@ -138,27 +148,41 @@ impl<P: Platform> Engine<P> {
                 }
                 let item = self.find_option(app, window, option, &exclude);
                 match item {
-                    Some(item) => self.run(
-                        app,
-                        window,
-                        &Step::Click {
+                    Some(item) => {
+                        let chosen = Step::Click {
                             target: hush_core::Target::Ref(item),
                             button: hush_core::Button::Left,
                             count: 1,
-                        },
-                        dirty,
-                    ),
+                        };
+                        let settled = self.run(app, window, &chosen, dirty)?;
+                        // The app takes the choice when its menu finishes
+                        // closing (an animation of about 200 ms on macOS),
+                        // after its first burst of events; answering before
+                        // that reports a menu that is about to vanish and a
+                        // value that hasn't changed yet. A menu that stays
+                        // open is closed so it doesn't float over the user.
+                        if self
+                            .wait_for(app, window, &Condition::Gone(item), MENU_CLOSE, dirty)
+                            .is_err()
+                        {
+                            let _ = self.platform.perform(
+                                app,
+                                window,
+                                Op::Key {
+                                    combo: escape(),
+                                    repeat: 1,
+                                },
+                            );
+                        }
+                        Ok(settled)
+                    }
                     None => {
                         let choices = self.option_names(app, window, &exclude);
-                        let escape = KeyCombo {
-                            modifiers: Default::default(),
-                            key: Key::Named(NamedKey::Escape),
-                        };
                         let _ = self.platform.perform(
                             app,
                             window,
                             Op::Key {
-                                combo: escape,
+                                combo: escape(),
                                 repeat: 1,
                             },
                         );
