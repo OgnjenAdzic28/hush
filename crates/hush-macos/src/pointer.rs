@@ -5,7 +5,7 @@
 //! 50 clicks landed exactly once on a covered Chromium window, front app
 //! unchanged): a move to the target, a primer press and release at (-1, -1),
 //! then the real press and release, every event stamped with the target's
-//! pid and window and posted through both SkyLight and the public call.
+//! pid and window and posted through SkyLight.
 
 use std::thread;
 use std::time::Duration;
@@ -177,9 +177,7 @@ pub(crate) fn scroll(target: &Target, x: f64, y: f64, dx: i32, dy: i32) -> Resul
     .ok_or_else(|| Error::Failed("couldn't create a scroll event".into()))?;
     CGEvent::set_location(Some(&event), screen(target, (x, y)));
     stamp(target, &event, (x, y))?;
-    private::post_to_pid(target.pid, &event)?;
-    CGEvent::post_to_pid(target.pid, Some(&event));
-    Ok(())
+    private::post_to_pid(target.pid, &event)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -205,9 +203,10 @@ fn post(
     set(field::SUBTYPE, 3);
     set(field::CLICK_GROUP, group);
     stamp(target, &event, at)?;
-    private::post_to_pid(target.pid, &event)?;
-    CGEvent::post_to_pid(target.pid, Some(&event));
-    Ok(())
+    // One path only. The reference recipe also posts through the public
+    // `CGEvent::post_to_pid`, but each path delivers on its own (macOS 27.2),
+    // so posting both clicked twice.
+    private::post_to_pid(target.pid, &event)
 }
 
 fn stamp(target: &Target, event: &CGEvent, at: (f64, f64)) -> Result<()> {
