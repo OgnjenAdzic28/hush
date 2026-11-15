@@ -75,9 +75,16 @@ impl<H> Default for RefTable<H> {
 
 impl<H: Clone + Eq + Hash> RefTable<H> {
     /// Gives every node marked in `include` a ref, keeping earlier refs where
-    /// the element is the same. Returns one entry per node in the snapshot.
-    /// Refs of elements that are gone are forgotten.
-    pub fn assign(&mut self, snapshot: &Snapshot<H>, include: &[bool]) -> Vec<Option<Ref>> {
+    /// the element is the same. `names` overrides a node's name where the
+    /// outline shows another one (an unnamed row named by its text), so a
+    /// rebuilt element is matched by what the agent saw. Returns one entry per
+    /// node in the snapshot. Refs of elements that are gone are forgotten.
+    pub fn assign(
+        &mut self,
+        snapshot: &Snapshot<H>,
+        include: &[bool],
+        names: &[Option<String>],
+    ) -> Vec<Option<Ref>> {
         let nodes = &snapshot.nodes;
         let mut refs: Vec<Option<Ref>> = vec![None; nodes.len()];
         let mut claimed = HashSet::new();
@@ -114,13 +121,12 @@ impl<H: Clone + Eq + Hash> RefTable<H> {
                 continue;
             }
             let parent = nearest_included_ref(snapshot, &refs, index);
-            let ordinal = ordinals
-                .entry((parent, node.role, node.name.as_str()))
-                .or_insert(0);
+            let name = names[index].as_deref().unwrap_or(&node.name);
+            let ordinal = ordinals.entry((parent, node.role, name)).or_insert(0);
             *ordinal += 1;
             let signature = Signature {
                 role: node.role,
-                name: node.name.clone(),
+                name: name.to_owned(),
                 parent,
                 ordinal: *ordinal,
             };
@@ -191,7 +197,7 @@ mod tests {
 
     fn refs_of(table: &mut RefTable<u32>, snapshot: &Snapshot<u32>) -> Vec<String> {
         table
-            .assign(snapshot, &all(snapshot))
+            .assign(snapshot, &all(snapshot), &vec![None; snapshot.nodes.len()])
             .into_iter()
             .map(|r| r.map(|r| r.to_string()).unwrap_or_default())
             .collect()
@@ -239,6 +245,28 @@ mod tests {
             node(30, Role::Button, "OK", Some(0)),
         ]);
         assert_eq!(refs_of(&mut table, &rebuilt), ["e1", "b1", "b2"]);
+    }
+
+    #[test]
+    fn rebuilt_unnamed_rows_follow_their_shown_name_not_their_position() {
+        let mut table = RefTable::default();
+        let rows = |handles: [u32; 2]| {
+            snapshot(vec![
+                node(1, Role::List, "", None),
+                node(handles[0], Role::Row, "", Some(0)),
+                node(handles[1], Role::Row, "", Some(0)),
+            ])
+        };
+        let first = rows([2, 3]);
+        let names = |a: &str, b: &str| vec![None, Some(a.to_owned()), Some(b.to_owned())];
+        let all = vec![true; 3];
+        let before = table.assign(&first, &all, &names("Invoice.pdf", "Notes.txt"));
+
+        // Re-rendered with new handles and the rows in the other order.
+        let rebuilt = rows([30, 20]);
+        let after = table.assign(&rebuilt, &all, &names("Notes.txt", "Invoice.pdf"));
+        assert_eq!(after[1], before[2]);
+        assert_eq!(after[2], before[1]);
     }
 
     #[test]

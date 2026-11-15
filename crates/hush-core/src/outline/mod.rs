@@ -63,7 +63,7 @@ impl View {
         options: &OutlineOptions,
     ) -> (View, Vec<Option<Ref>>) {
         let plan = Plan::new(snapshot, options);
-        let assigned = refs.assign(snapshot, &plan.include);
+        let assigned = refs.assign(snapshot, &plan.include, &plan.names);
 
         let mut view = View {
             header: header(snapshot),
