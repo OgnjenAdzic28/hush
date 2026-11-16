@@ -1,13 +1,15 @@
 //! The `hush` binary: `hush mcp` for agents that speak MCP, and the same
 //! tools as shell commands for agents that prefer a shell.
 //!
-//! Shell commands run in a per-user daemon (see `daemon`) so refs, diffs and
-//! app watching carry over between commands, as in an MCP session. When no
-//! daemon can be reached, or `HUSH_NO_DAEMON` is set, a command runs in its
-//! own process from a fresh read.
+//! Everything runs in one per-user host process (see `daemon` and `host`):
+//! `hush mcp` pipes the agent to a session there, and shell commands share
+//! one engine there, so refs, diffs and app watching carry over between
+//! commands. When no host can be reached, or `HUSH_NO_DAEMON` is set, a
+//! command or MCP session runs in its own process.
 
 mod cli;
 mod daemon;
+mod host;
 mod platform;
 mod signals;
 
@@ -21,7 +23,7 @@ hush: background computer use for any agent
 
 usage:
   hush mcp                                  serve MCP over stdio
-  hush daemon                               serve shell commands (started for you)
+  hush daemon                               the per-user host every command uses (started for you)
   hush apps [QUERY]                         running apps, or apps matching QUERY
   hush observe APP [--window W] [--focus REF] [--full] [--menus]
   hush act APP [--window W] STEP...         each STEP is one quoted step
@@ -52,9 +54,32 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let alone = std::env::var_os("HUSH_NO_DAEMON").is_some();
+    if args[0] == "mcp"
+        && !alone
+        && let Some(piped) = daemon::pipe_mcp()
+    {
+        return match piped {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("hush: the connection to the Hush host broke: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if args[0] == "daemon" {
+        let served = platform::platform().and_then(host::serve);
+        return match served {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(message) => {
+                eprintln!("hush: {message}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let in_daemon = match args[0].as_str() {
-        "mcp" | "daemon" => None,
-        _ if std::env::var_os("HUSH_NO_DAEMON").is_some() => None,
+        "mcp" => None,
+        _ if alone => None,
         _ => daemon::request(&args),
     };
     let result = match in_daemon {
@@ -84,7 +109,6 @@ fn run<P: hush_core::Platform>(mut engine: Engine<P>, args: &[String]) -> Result
                 .map(|()| String::new())
                 .map_err(|e| e.to_string())
         }
-        "daemon" => daemon::serve(&mut engine).map(|()| String::new()),
         _ => cli::command(&mut engine, args),
     }
 }

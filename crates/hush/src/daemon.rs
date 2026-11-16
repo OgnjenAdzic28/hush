@@ -1,41 +1,41 @@
-//! One engine per user behind a Unix socket, so shell commands keep refs,
-//! answer with diffs and keep watching apps between calls, like an MCP
-//! session does.
+//! The client side of the per-user Hush host (see `host`): shell commands
+//! send their arguments to it, and `hush mcp` becomes a pipe between the
+//! agent and a session in it.
 //!
-//! The first shell command starts `hush daemon` in the background; it exits
-//! after `IDLE` without a request. A daemon built from another binary than
-//! the caller's (after a rebuild or an upgrade) exits on the first request
-//! and the caller starts a fresh one. The socket lives in the per-user
-//! temporary folder, which only the user can open.
+//! One host serves everyone because macOS lets only one process per
+//! executable capture windows: a second Hush process started from the same
+//! file waits forever for pixels while the first is alive. One host also
+//! keeps one lane display and one set of app watchers for every agent.
+//!
+//! The first caller starts `hush daemon` in the background. A host built from
+//! another binary than the caller's (after a rebuild or an upgrade) exits on
+//! the caller's first request when no session is open, and the caller starts
+//! a fresh one. The socket lives in the per-user temporary folder, which only
+//! the user can open.
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::net::Shutdown;
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use hush_core::Platform;
-use hush_engine::Engine;
 use serde_json::{Value, json};
 
 use crate::cli;
 
-/// How long the daemon waits for a request before exiting.
-const IDLE: Duration = Duration::from_secs(600);
-/// How long a caller waits for a daemon it started to accept connections.
+/// How long a caller waits for a host it started to accept connections.
 const START_LIMIT: Duration = Duration::from_secs(3);
 
 pub(crate) fn socket() -> PathBuf {
     std::env::temp_dir().join("hush.sock")
 }
 
-/// Identifies the binary: a daemon only serves callers built from the same
+/// Identifies the binary: a host only serves callers built from the same
 /// file.
-fn build() -> String {
+pub(crate) fn build() -> String {
     std::env::current_exe()
         .and_then(|exe| exe.metadata())
         .and_then(|meta| meta.modified())
@@ -44,65 +44,95 @@ fn build() -> String {
         .map_or_else(String::new, |since| since.as_nanos().to_string())
 }
 
-/// Runs `args` in the daemon, starting it if needed. `None` when no daemon
+/// Runs `args` in the host, starting it if needed. `None` when no host
 /// could be reached, so the caller runs the command itself.
 pub(crate) fn request(args: &[String]) -> Option<Result<String, String>> {
     let cwd = std::env::current_dir().ok()?;
     let args = cli::with_absolute_out(args, &cwd);
     let message = json!({ "args": args, "build": build() }).to_string();
+    let (stream, reply) = open(&message)?;
+    drop(stream);
+    Some(answer(reply))
+}
+
+/// Pipes this process's stdin and stdout to a new MCP session in the host
+/// until either side closes. `None` when no host could be reached, so the
+/// caller serves MCP itself.
+///
+/// The pipe never touches the window server, so it doesn't count as a
+/// second Hush process for capture.
+pub(crate) fn pipe_mcp() -> Option<io::Result<()>> {
+    let message = json!({ "mcp": true, "build": build() }).to_string();
+    let (stream, reply) = open(&message)?;
+    if reply["ok"].as_bool() != Some(true) {
+        return None;
+    }
+    let mut to_host = stream.try_clone().ok()?;
+    thread::spawn(move || {
+        let _ = io::copy(&mut io::stdin().lock(), &mut to_host);
+        // The agent closed its side: the host ends the session.
+        let _ = to_host.shutdown(Shutdown::Write);
+    });
+    let mut from_host = stream;
+    Some(io::copy(&mut from_host, &mut io::stdout().lock()).map(|_| ()))
+}
+
+/// Connects, sends `message` and reads the first reply line, starting a host
+/// or replacing an older one as needed. `None` only when the message never
+/// reached a host that answered it.
+fn open(message: &str) -> Option<(UnixStream, Value)> {
     for _ in 0..2 {
-        let stream = match UnixStream::connect(socket()) {
+        let mut stream = match UnixStream::connect(socket()) {
             Ok(stream) => stream,
             Err(_) => start()?,
         };
-        match exchange(stream, &message)? {
-            Reply::Done(result) => return Some(result),
-            // An older daemon is exiting; the next round starts a new one.
-            Reply::Restart => wait_until_gone(),
+        writeln!(stream, "{message}").ok()?;
+        let reply = match read_line(&mut stream) {
+            Some(line) => serde_json::from_str::<Value>(&line).unwrap_or(Value::Null),
+            None => Value::Null,
+        };
+        if reply["restart"].as_bool() == Some(true) {
+            // An older host is exiting; the next round starts a new one.
+            wait_until_gone();
+            continue;
         }
+        return Some((stream, reply));
     }
     None
 }
 
-enum Reply {
-    Done(Result<String, String>),
-    Restart,
+/// One line, read a byte at a time so nothing after it is taken from the
+/// stream (an MCP session's first messages follow the handshake).
+fn read_line(stream: &mut UnixStream) -> Option<String> {
+    let mut line = Vec::new();
+    let mut byte = [0u8];
+    loop {
+        match stream.read(&mut byte) {
+            Ok(0) => return (!line.is_empty()).then(|| String::from_utf8_lossy(&line).into()),
+            Ok(_) if byte[0] == b'\n' => return Some(String::from_utf8_lossy(&line).into()),
+            Ok(_) => line.push(byte[0]),
+            Err(_) => return None,
+        }
+    }
 }
 
-/// `None` only when the request never reached the daemon. Once it was sent,
-/// the daemon may have acted, so a lost reply is an error, never a reason
-/// to run the command again in process.
+/// A shell command's reply. Once a command was sent the host may have
+/// acted, so a lost reply is an error, never a reason to run it again in
+/// process.
 ///
 /// The reply has no time limit: a command is bounded by its own steps'
 /// limits (`wait ... within`) and every Accessibility call's timeout.
-fn exchange(mut stream: UnixStream, message: &str) -> Option<Reply> {
-    writeln!(stream, "{message}").ok()?;
-    let lost = || {
-        Reply::Done(Err(
-            "lost the daemon's reply; the command may have run, so look before repeating it".into(),
-        ))
-    };
-    let mut line = String::new();
-    if BufReader::new(stream).read_line(&mut line).is_err() {
-        return Some(lost());
+fn answer(reply: Value) -> Result<String, String> {
+    match (reply["ok"].as_bool(), reply["text"].as_str()) {
+        (Some(true), Some(text)) => Ok(text.to_owned()),
+        (Some(false), Some(text)) => Err(text.to_owned()),
+        _ => Err(
+            "lost the host's reply; the command may have run, so look before repeating it".into(),
+        ),
     }
-    let Ok(reply) = serde_json::from_str::<Value>(&line) else {
-        return Some(lost());
-    };
-    if reply["restart"].as_bool() == Some(true) {
-        return Some(Reply::Restart);
-    }
-    let (Some(ok), Some(text)) = (reply["ok"].as_bool(), reply["text"].as_str()) else {
-        return Some(lost());
-    };
-    Some(Reply::Done(if ok {
-        Ok(text.to_owned())
-    } else {
-        Err(text.to_owned())
-    }))
 }
 
-/// Starts a daemon and connects to it.
+/// Starts a host and connects to it.
 fn start() -> Option<UnixStream> {
     let exe = std::env::current_exe().ok()?;
     Command::new(exe)
@@ -122,7 +152,7 @@ fn start() -> Option<UnixStream> {
         if Instant::now() >= deadline {
             return None;
         }
-        // Waiting for the socket to accept; the daemon is up in ~20 ms.
+        // Waiting for the socket to accept; the host is up in ~20 ms.
         thread::sleep(Duration::from_millis(10));
     }
 }
@@ -134,103 +164,9 @@ fn wait_until_gone() {
     }
 }
 
-/// Serves requests until idle. Requests run one at a time on this thread,
-/// which owns the engine.
-pub(crate) fn serve<P: Platform>(engine: &mut Engine<P>) -> Result<(), String> {
-    let path = socket();
-    let listener = match UnixListener::bind(&path) {
-        Ok(listener) => listener,
-        // A live daemon already answers there: nothing to do.
-        Err(_) if UnixStream::connect(&path).is_ok() => return Ok(()),
-        // A socket file left by a daemon that didn't exit cleanly.
-        Err(_) => {
-            std::fs::remove_file(&path).map_err(|e| e.to_string())?;
-            UnixListener::bind(&path).map_err(|e| e.to_string())?
-        }
-    };
-    // `None` while a command runs, so a long one is never cut off.
-    let last_request = Arc::new(Mutex::new(Some(Instant::now())));
-    let stop = Arc::new(AtomicBool::new(false));
-    watch_idle(Arc::clone(&last_request), Arc::clone(&stop), path.clone());
-    let build = build();
-    for stream in listener.incoming() {
-        // Returning drops the engine, so the platform cleans up (apps in
-        // the lane are hidden before the display goes away).
-        if stop.load(Ordering::SeqCst) {
-            let _ = std::fs::remove_file(&path);
-            return Ok(());
-        }
-        let Ok(stream) = stream else { continue };
-        if let Ok(mut last) = last_request.lock() {
-            *last = None;
-        }
-        let handled = handle(engine, stream, &build);
-        if let Ok(mut last) = last_request.lock() {
-            *last = Some(Instant::now());
-        }
-        if handled == Handled::Restart {
-            let _ = std::fs::remove_file(&path);
-            return Ok(());
-        }
-    }
-    Ok(())
-}
-
-#[derive(PartialEq)]
-enum Handled {
-    Served,
-    Restart,
-}
-
-fn handle<P: Platform>(engine: &mut Engine<P>, stream: UnixStream, build: &str) -> Handled {
+/// The first line of a connection, for the host.
+pub(crate) fn first_line(reader: &mut BufReader<UnixStream>) -> Option<Value> {
     let mut line = String::new();
-    let Ok(mut writer) = stream.try_clone() else {
-        return Handled::Served;
-    };
-    if BufReader::new(stream).read_line(&mut line).is_err() {
-        return Handled::Served;
-    }
-    let Ok(request) = serde_json::from_str::<Value>(&line) else {
-        let _ = writeln!(writer, "{}", json!({ "ok": false, "text": "bad request" }));
-        return Handled::Served;
-    };
-    if request["build"].as_str() != Some(build) {
-        let _ = writeln!(writer, "{}", json!({ "restart": true }));
-        return Handled::Restart;
-    }
-    let args: Vec<String> = request["args"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    let reply = match cli::command(engine, &args) {
-        Ok(text) => json!({ "ok": true, "text": text }),
-        Err(text) => json!({ "ok": false, "text": text }),
-    };
-    let _ = writeln!(writer, "{reply}");
-    Handled::Served
-}
-
-/// Stops the server once no request came for `IDLE` since the last one
-/// finished: it sets `stop` and wakes the accept loop with a connection.
-fn watch_idle(last_request: Arc<Mutex<Option<Instant>>>, stop: Arc<AtomicBool>, path: PathBuf) {
-    thread::spawn(move || {
-        loop {
-            // A coarse timer: idleness is measured in minutes.
-            thread::sleep(Duration::from_secs(5));
-            let idle = last_request
-                .lock()
-                .ok()
-                .and_then(|last| last.map(|at| at.elapsed()))
-                .unwrap_or(Duration::ZERO);
-            if idle >= IDLE {
-                stop.store(true, Ordering::SeqCst);
-                let _ = UnixStream::connect(&path);
-                return;
-            }
-        }
-    });
+    reader.read_line(&mut line).ok()?;
+    serde_json::from_str(&line).ok()
 }

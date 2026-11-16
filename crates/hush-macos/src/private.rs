@@ -7,7 +7,8 @@
 //! `skylight.rs`, and yabai (MIT) `window_manager_make_key_window`.
 
 use std::ffi::{CStr, c_void};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use hush_core::{Error, Result};
 use objc2_application_services::{AXError, AXUIElement};
@@ -190,37 +191,69 @@ pub(crate) enum Capture {
     Image(CfRef),
     /// No picture (a minimized or closed window).
     Nothing,
-    /// macOS held the request for a Screen Recording decision that never came.
+    /// The window server didn't answer in time (see `CAPTURE_LIMIT`).
     Blocked,
 }
 
-/// Longest a capture may take. One takes 15 to 33 ms; a process without a
-/// Screen Recording grant of its own (an MCP server Claude Code started is
-/// its own responsible process) waits in
-/// `SLSHWCaptureWindowListToIOSurfaceProxying` with no end.
+/// Longest a capture may take. One takes 15 to 33 ms. The window server
+/// holds a request with no end when another process started from the same
+/// executable is alive (macOS serves one capturing process per program
+/// file), or when Screen Recording is off for the app that started Hush; the
+/// request waits in `SLSHWCaptureWindowListToIOSurfaceProxying`.
 const CAPTURE_LIMIT: std::time::Duration = std::time::Duration::from_secs(2);
 
-/// Once a capture was held, later ones fail at once instead of piling up
-/// held threads: until this instant.
-static BLOCKED_UNTIL: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+/// Captures given up on that haven't come back yet. While one is out, later
+/// ones fail at once instead of piling up held threads, except for one
+/// fresh try every `RETRY` (up to `MAX_HELD` held): a held request can stay
+/// out long after the other process exited, while a new one goes through.
+static HELD: AtomicUsize = AtomicUsize::new(0);
+static LAST_TRY: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+const RETRY: std::time::Duration = std::time::Duration::from_secs(10);
+const MAX_HELD: usize = 4;
+
+/// Whether to send a capture now.
+fn may_try() -> bool {
+    let held = HELD.load(Ordering::SeqCst);
+    let mut last = LAST_TRY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let now = std::time::Instant::now();
+    let go = held == 0 || (held < MAX_HELD && last.is_none_or(|at| now - at >= RETRY));
+    if go {
+        *last = Some(now);
+    }
+    go
+}
+
+const RUNNING: u8 = 0;
+const DONE: u8 = 1;
+const ABANDONED: u8 = 2;
 
 pub(crate) fn capture_window(window: u32) -> Capture {
-    let now = std::time::Instant::now();
-    if BLOCKED_UNTIL
-        .lock()
-        .ok()
-        .and_then(|until| *until)
-        .is_some_and(|until| now < until)
-    {
+    if !may_try() {
         return Capture::Blocked;
     }
     let (sender, receiver) = std::sync::mpsc::channel();
+    let state = Arc::new(AtomicU8::new(RUNNING));
+    let request = Arc::clone(&state);
     // The image crosses threads as an address: CGImages are immutable and
     // safe to use from any thread.
     let spawned = std::thread::Builder::new()
         .name("hush-capture".into())
         .spawn(move || {
-            let _ = sender.send(capture_now(window).map(|image| image as usize));
+            let image = capture_now(window).map(|image| image as usize);
+            let late = request
+                .compare_exchange(RUNNING, DONE, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err();
+            if late {
+                HELD.fetch_sub(1, Ordering::SeqCst);
+            }
+            if (late || sender.send(image).is_err())
+                && let Some(image) = image
+            {
+                // SAFETY: nobody else took the +1 image.
+                unsafe { CFRelease(image as CfRef) };
+            }
         });
     if spawned.is_err() {
         return Capture::Nothing;
@@ -229,10 +262,18 @@ pub(crate) fn capture_window(window: u32) -> Capture {
         Ok(Some(image)) => Capture::Image(image as CfRef),
         Ok(None) => Capture::Nothing,
         Err(_) => {
-            if let Ok(mut until) = BLOCKED_UNTIL.lock() {
-                *until = Some(now + std::time::Duration::from_secs(60));
+            if state
+                .compare_exchange(RUNNING, ABANDONED, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                HELD.fetch_add(1, Ordering::SeqCst);
+                return Capture::Blocked;
             }
-            Capture::Blocked
+            // It finished just as the wait ended: its answer is on the way.
+            match receiver.recv() {
+                Ok(Some(image)) => Capture::Image(image as CfRef),
+                _ => Capture::Nothing,
+            }
         }
     }
 }

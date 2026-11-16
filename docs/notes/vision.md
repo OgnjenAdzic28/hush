@@ -35,23 +35,20 @@ Limits: clip names on a timeline's colored blocks still come out misspelled or m
 ("OcearLSunset.mp"). Icons have no text, and recognition can read a label differently from one
 read to the next, which shows up as a change in the diff.
 
-## Screen Recording when an agent starts Hush
+## One capturing process per program file
 
-Claude Code starts an MCP server as its own responsible process, so macOS checks Screen Recording
-for the `hush` binary itself, not for the terminal or app the agent runs in. Without a grant of its
-own, the window server holds the capture request in `SLSHWCaptureWindowListToIOSurfaceProxying`
-indefinitely. Hush now gives up after 2 s, fails every capture for the next minute straight away,
-and says which binary needs Screen Recording. `observe` adds one line saying the pixels can't be
-read. Accessibility isn't affected.
+macOS serves window captures to one live process per executable path. While one Hush process is
+alive, a second one started from the same file mostly gets no answer: its request waits in
+`SLSHWCaptureWindowListToIOSurfaceProxying`, and sometimes the first process's captures stop too.
+It isn't Hush-specific. A 20-line C program calling the same function, and a Swift program using
+the public `SCScreenshotManager`, behave the same with two copies from one path, while copies at
+different paths don't interfere. Permissions don't explain it: under T3 Code, an MCP server that
+Claude Code starts has T3 Code as its responsible process, which has Screen Recording.
 
-The grant is tied to the binary's code signature, and a build that is only ad-hoc signed gets a new
-one each time it is rebuilt. Grant it to a copy that doesn't change (an installed `hush`), not to
-`target/release/hush`.
+So everything runs in one host per user (see the README), and `hush mcp` is a pipe that never
+touches the window server. A capture that gets no answer within 2 s fails with a message naming
+the other processes running the same file. Later captures fail at once while one is held, with a
+fresh try every 10 s; after the other process exits, the host captures again within 5 to 7 s.
 
-## Screen Recording and the binary's path
-
-Reading pixels needs Screen Recording for the app running Hush. On the owner's Mac,
-`target/release/hush` itself returned no images from a fresh process while an identical copy
-elsewhere did: macOS keeps a per-binary record for it. If `see` or `seen` labels fail with "the
-window server returned no image", check System Settings > Privacy & Security > Screen & System
-Audio Recording for a `hush` entry.
+An earlier version of this note blamed a missing Screen Recording grant for the binary. That was
+this collision: the shell's background daemon was alive whenever the agent's MCP server started.
