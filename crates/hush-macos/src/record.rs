@@ -44,6 +44,9 @@ const FPS: f64 = 30.0;
 const QUALITY: f64 = 0.92;
 /// Bits a second per pixel of the movie: sharp interface text at 1080p.
 const BITS_PER_PIXEL: f64 = 6.0;
+/// A recording nobody stops ends here, so its frames can't fill the disk
+/// (about 10 GB an hour of 1080p JPEGs).
+const LONGEST: Duration = Duration::from_secs(600);
 
 struct Live {
     stop: Arc<AtomicBool>,
@@ -81,7 +84,7 @@ pub(crate) fn start(window_id: u32, frame: Rect) -> Result<u64> {
                 size: (width, height),
             };
             let mut n = 1u64;
-            while !stopping.load(Ordering::SeqCst) {
+            while !stopping.load(Ordering::SeqCst) && started.elapsed() < LONGEST {
                 let due = started + Duration::from_secs_f64(n as f64 / FPS);
                 n += 1;
                 let now = Instant::now();
@@ -114,6 +117,22 @@ pub(crate) fn start(window_id: u32, frame: Rect) -> Result<u64> {
             },
         );
     Ok(id)
+}
+
+/// Stops the recording and deletes its frames: its session ended without
+/// stopping it.
+pub(crate) fn cancel(id: u64) {
+    let live = LIVE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_mut()
+        .and_then(|live| live.remove(&id));
+    if let Some(live) = live {
+        live.stop.store(true, Ordering::SeqCst);
+        if let Ok(shots) = live.thread.join() {
+            let _ = std::fs::remove_dir_all(&shots.dir);
+        }
+    }
 }
 
 /// Stops the recording and writes the movie to `out`, with the cursor drawn
