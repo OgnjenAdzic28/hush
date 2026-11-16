@@ -4,12 +4,14 @@
 //! agent through) gets a session with its own engine, so its refs and diffs
 //! are its own; every engine shares the one platform, so captures, the lane
 //! and app watching happen in this process only. Shell commands share one
-//! engine, so refs carry over from one command to the next. The main thread
-//! is kept for work that must run there (AppleScript).
+//! engine per app, so refs carry over from one command to the next and a long
+//! command on one app (a timeline) doesn't hold up commands on another. The
+//! main thread is kept for work that must run there (AppleScript).
 //!
 //! The host exits after `IDLE` with no connection open, hiding the apps it
 //! moved to the lane.
 
+use std::collections::HashMap;
 use std::io::{BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -31,10 +33,13 @@ const IDLE: Duration = Duration::from_secs(600);
 pub(crate) trait Shared: Platform<Handle: Send> + Send + Sync + 'static {}
 impl<P: Platform<Handle: Send> + Send + Sync + 'static> Shared for P {}
 
+/// One session's engine, shared by the shell commands for one app.
+type SharedEngine<P> = Arc<Mutex<Engine<Arc<P>>>>;
+
 struct Host<P: Platform> {
     platform: Arc<P>,
-    /// Shell commands share one engine and take turns on it.
-    shell: Mutex<Engine<Arc<P>>>,
+    /// Shell commands share one engine per app and take turns on it.
+    shell: Mutex<HashMap<String, SharedEngine<P>>>,
     build: String,
     path: PathBuf,
     /// Connections being served right now (open sessions included).
@@ -61,7 +66,7 @@ pub(crate) fn serve<P: Shared>(platform: P) -> Result<(), String> {
     };
     let platform = Arc::new(platform);
     let host = Arc::new(Host {
-        shell: Mutex::new(Engine::new(Arc::clone(&platform))),
+        shell: Mutex::default(),
         platform,
         build: daemon::build(),
         path,
@@ -147,15 +152,30 @@ fn handle<P: Shared>(host: &Host<P>, stream: UnixStream) {
                 .collect()
         })
         .unwrap_or_default();
-    let result = {
-        let mut engine = host.shell.lock().unwrap_or_else(PoisonError::into_inner);
-        cli::command(&mut engine, &args)
-    };
+    let engine = shell_engine(host, &args);
+    let result = cli::command(
+        &mut engine.lock().unwrap_or_else(PoisonError::into_inner),
+        &args,
+    );
     let reply = match result {
         Ok(text) => json!({ "ok": true, "text": text }),
         Err(text) => json!({ "ok": false, "text": text }),
     };
     let _ = writeln!(writer, "{reply}");
+}
+
+/// The shell engine for the app a command names (`apps` names none).
+fn shell_engine<P: Shared>(host: &Host<P>, args: &[String]) -> SharedEngine<P> {
+    let app = match args.first().map(String::as_str) {
+        Some("apps") | None => String::new(),
+        _ => args.get(1).map(|a| a.to_lowercase()).unwrap_or_default(),
+    };
+    let mut engines = host.shell.lock().unwrap_or_else(PoisonError::into_inner);
+    Arc::clone(
+        engines
+            .entry(app)
+            .or_insert_with(|| Arc::new(Mutex::new(Engine::new(Arc::clone(&host.platform))))),
+    )
 }
 
 /// Exits once no connection was open for `IDLE`.
