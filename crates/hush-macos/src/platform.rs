@@ -178,12 +178,19 @@ impl Platform for MacPlatform {
         let pid = app.pid.map_or(0, |p| p as i32);
         self.watcher.watch_windows(pid);
         let created = self.watcher.take_created(pid);
-        let listed = windows::list(
-            &Self::app_element(app)?,
-            pid,
-            created,
-            &mut lock(&self.off_space),
-        );
+        // Listing is many round trips to the app, so it works on a copy of
+        // this app's entries: a slow app never holds up other sessions.
+        let mut known: windows::Known = lock(&self.off_space)
+            .iter()
+            .filter(|((owner, _), _)| *owner == pid)
+            .map(|(key, element)| (*key, element.clone()))
+            .collect();
+        let listed = windows::list(&Self::app_element(app)?, pid, created, &mut known);
+        {
+            let mut off_space = lock(&self.off_space);
+            off_space.retain(|(owner, _), _| *owner != pid);
+            off_space.extend(known);
+        }
         let mut cache = lock(&self.windows);
         cache.retain(|_, (owner, _)| *owner != pid);
         Ok(listed

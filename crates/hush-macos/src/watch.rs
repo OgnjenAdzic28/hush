@@ -139,10 +139,16 @@ impl Watcher {
 
     /// Starts counting events for `pid` if it isn't counted yet.
     pub(crate) fn watch(&self, pid: i32) {
-        let mut observers = self.observers.lock().expect("observer lock");
-        if observers.contains_key(&pid) {
+        if self
+            .observers
+            .lock()
+            .expect("observer lock")
+            .contains_key(&pid)
+        {
             return;
         }
+        // Registering is a round trip to the app, which a busy app makes
+        // slow, so it happens outside the lock other sessions need.
         let counter = Counter::Activity {
             pid,
             counts: Arc::clone(&self.counts),
@@ -150,6 +156,11 @@ impl Watcher {
         let Some(observer) = self.observe(pid, &NOTIFICATIONS, counter) else {
             return;
         };
+        let mut observers = self.observers.lock().expect("observer lock");
+        if observers.contains_key(&pid) {
+            // Another session registered it first; this one goes.
+            return;
+        }
         self.counts
             .lock()
             .expect("counts lock")

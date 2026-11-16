@@ -363,6 +363,10 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
     const LAST: u64 = 0x8000;
     /// How long one call may spend past the first ids.
     const BUDGET: std::time::Duration = std::time::Duration::from_millis(100);
+    /// How long the first ids may take. They take 34 to 88 ms from an app
+    /// that answers; one that doesn't makes every try wait out the
+    /// Accessibility timeout, and 1000 tries would take 25 minutes.
+    const FIRST_LIMIT: std::time::Duration = std::time::Duration::from_millis(500);
     static FUNCTION: OnceLock<Option<CreateWithToken>> = OnceLock::new();
     static CURSORS: OnceLock<std::sync::Mutex<std::collections::HashMap<i32, u64>>> =
         OnceLock::new();
@@ -373,7 +377,8 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
         return Vec::new();
     };
     let mut found = Vec::new();
-    let try_id = |element_id: u64, found: &mut Vec<(u32, Element)>| {
+    // False when the app didn't answer in time: the scan stops there.
+    let try_id = |element_id: u64, found: &mut Vec<(u32, Element)>| -> bool {
         let mut token = [0u8; 20];
         token[0..4].copy_from_slice(&pid.to_le_bytes());
         token[8..12].copy_from_slice(&0x636f_636f_u32.to_le_bytes());
@@ -385,12 +390,16 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
             CFRelease(data);
             match std::ptr::NonNull::new(raw) {
                 Some(raw) => Element::from_raw(objc2_core_foundation::CFRetained::from_raw(raw)),
-                None => return,
+                None => return true,
             }
         };
         // Children report their window's id too, so the role is checked.
-        if element.string("AXRole").as_deref() != Some("AXWindow") {
-            return;
+        let role = element.value("AXRole");
+        if role == Err(AXError::CannotComplete) {
+            return false;
+        }
+        if role.ok().and_then(|v| crate::cf::string(&v)).as_deref() != Some("AXWindow") {
+            return true;
         }
         if let Some(id) = window_id(&element)
             && wanted.contains(&id)
@@ -398,12 +407,16 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
         {
             found.push((id, element));
         }
+        true
     };
+    let first_deadline = std::time::Instant::now() + FIRST_LIMIT;
     for element_id in 0..FIRST {
         if found.len() == wanted.len() {
             return found;
         }
-        try_id(element_id, &mut found);
+        if !try_id(element_id, &mut found) || std::time::Instant::now() >= first_deadline {
+            return found;
+        }
     }
     let cursors = CURSORS.get_or_init(Default::default);
     let mut cursor = cursors
@@ -411,7 +424,9 @@ pub(crate) fn windows_by_token(pid: i32, wanted: &[u32]) -> Vec<(u32, Element)> 
         .map_or(FIRST, |map| map.get(&pid).copied().unwrap_or(FIRST));
     let deadline = std::time::Instant::now() + BUDGET;
     while found.len() < wanted.len() && std::time::Instant::now() < deadline {
-        try_id(cursor, &mut found);
+        if !try_id(cursor, &mut found) {
+            break;
+        }
         cursor = if cursor + 1 >= LAST {
             FIRST
         } else {
