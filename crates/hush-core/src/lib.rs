@@ -2,6 +2,7 @@
 //! steps and settle rules, plus the `Platform` trait each OS backend
 //! implements. Nothing here touches an OS API.
 
+pub mod cursor;
 pub mod diff;
 pub mod key;
 pub mod menus;
