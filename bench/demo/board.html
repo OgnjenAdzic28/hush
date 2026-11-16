@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Board</title>
+<style>
+  :root { --accent: #7c5cff; --bg: #0b0b0f; --panel: #14141a; --card: #1c1c24; --line: #262630; --text: #ececf1; --muted: #8b8b98; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; -webkit-font-smoothing: antialiased; user-select: none; -webkit-user-select: none; }
+  header { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); }
+  h1 { font-size: 15px; font-weight: 650; margin: 0; letter-spacing: -0.01em; flex: 1; }
+  .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  form { display: flex; gap: 8px; padding: 0 16px 12px; }
+  input { flex: 1; background: var(--panel); border: 1px solid var(--line); color: var(--text); border-radius: 9px;
+    padding: 8px 10px; font: inherit; outline: none; }
+  input:focus { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+  button { font: inherit; border: 0; cursor: pointer; }
+  .add { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 100%, white 12%), var(--accent));
+    color: white; font-weight: 600; padding: 8px 14px; border-radius: 9px; box-shadow: 0 6px 16px -8px var(--accent); }
+  .add:active { transform: scale(0.97); }
+  main { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 16px 16px; height: calc(100% - 100px); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex;
+    flex-direction: column; gap: 8px; min-height: 0; transition: border-color .15s, background .15s; }
+  section.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+  section h2 { margin: 0 0 2px; font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    display: flex; justify-content: space-between; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; display: flex;
+    gap: 8px; align-items: flex-start; animation: pop .28s cubic-bezier(.22,1,.36,1); }
+  .card.dragging { opacity: .35; }
+  .card .title { flex: 1; }
+  .card.done .title { color: var(--muted); text-decoration: line-through; }
+  .check { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #4a4a58; background: transparent; padding: 0; flex: none; margin-top: 1px; }
+  .card.done .check { background: var(--accent); border-color: var(--accent); }
+  .tag { font-size: 10.5px; color: color-mix(in srgb, var(--accent) 80%, white); background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: 6px; padding: 1px 6px; flex: none; }
+  .ghost { position: fixed; pointer-events: none; z-index: 9; transform: rotate(2deg); box-shadow: 0 14px 30px -10px rgba(0,0,0,.7); }
+  @keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.98); } }
+</style>
+</head>
+<body>
+<header><span class="dot"></span><h1 id="title">Board</h1><span class="count" id="count"></span></header>
+<form id="form" aria-label="New task">
+  <input id="name" aria-label="Task name" placeholder="Add a task…" autocomplete="off">
+  <button class="add" type="submit">Add</button>
+</form>
+<main>
+  <section data-column="todo" aria-label="To do"><h2>To do <span></span></h2></section>
+  <section data-column="doing" aria-label="Doing"><h2>Doing <span></span></h2></section>
+  <section data-column="done" aria-label="Done"><h2>Done <span></span></h2></section>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  document.documentElement.style.setProperty("--accent", params.get("accent") || "#7c5cff");
+  document.getElementById("title").textContent = params.get("title") || "Board";
+  document.title = params.get("title") || "Board";
+  const tags = ["design", "web", "infra", "docs", "QA"];
+  const column = name => document.querySelector(`section[data-column="${name}"]`);
+
+  function card(text, done = false) {
+    const el = document.createElement("div");
+    el.className = "card" + (done ? " done" : "");
+    el.setAttribute("role", "listitem");
+    el.setAttribute("aria-label", text);
+    const check = document.createElement("button");
+    check.className = "check";
+    check.setAttribute("aria-label", "Complete " + text);
+    check.addEventListener("click", e => { e.stopPropagation(); el.classList.toggle("done"); });
+    const title = document.createElement("span");
+    title.className = "title";
+    title.textContent = text;
+    const tag = document.createElement("span");
+    tag.className = "tag";
+    tag.textContent = tags[text.length % tags.length];
+    el.append(check, title, tag);
+    el.addEventListener("mousedown", e => startDrag(e, el));
+    return el;
+  }
+
+  function counts() {
+    let total = 0;
+    for (const s of document.querySelectorAll("section")) {
+      const n = s.querySelectorAll(".card").length;
+      s.querySelector("h2 span").textContent = n;
+      total += n;
+    }
+    document.getElementById("count").textContent = total + " tasks";
+  }
+
+  for (const t of (params.get("todo") || "").split("|").filter(Boolean)) column("todo").append(card(t));
+  for (const t of (params.get("doing") || "").split("|").filter(Boolean)) column("doing").append(card(t));
+  counts();
+
+  document.getElementById("form").addEventListener("submit", e => {
+    e.preventDefault();
+    const input = document.getElementById("name");
+    const text = input.value.trim();
+    if (!text) return;
+    column("todo").append(card(text));
+    input.value = "";
+    counts();
+  });
+
+  // Dragging with plain mouse events, so any pointer, real or synthetic, can move cards.
+  let drag = null;
+  function startDrag(e, el) {
+    if (e.button !== 0 || e.target.classList.contains("check")) return;
+    const r = el.getBoundingClientRect();
+    const ghost = el.cloneNode(true);
+    ghost.classList.add("ghost");
+    ghost.style.width = r.width + "px";
+    document.body.append(ghost);
+    el.classList.add("dragging");
+    drag = { el, ghost, dx: e.clientX - r.left, dy: e.clientY - r.top };
+    move(e);
+  }
+  function over(e) {
+    return document.elementsFromPoint(e.clientX, e.clientY).find(n => n.tagName === "SECTION");
+  }
+  function move(e) {
+    if (!drag) return;
+    drag.ghost.style.left = (e.clientX - drag.dx) + "px";
+    drag.ghost.style.top = (e.clientY - drag.dy) + "px";
+    for (const s of document.querySelectorAll("section")) s.classList.toggle("over", s === over(e));
+  }
+  addEventListener("mousemove", move);
+  addEventListener("mouseup", e => {
+    if (!drag) return;
+    const target = over(e);
+    if (target && target !== drag.el.parentElement) {
+      target.append(drag.el);
+      if (target.dataset.column === "done") drag.el.classList.add("done");
+    }
+    drag.el.classList.remove("dragging");
+    drag.ghost.remove();
+    for (const s of document.querySelectorAll("section")) s.classList.remove("over");
+    drag = null;
+    counts();
+  });
+</script>
+</body>
+</html>
