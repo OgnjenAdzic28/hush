@@ -204,12 +204,13 @@ const CAPTURE_LIMIT: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Captures given up on that haven't come back yet. While one is out, later
 /// ones fail at once instead of piling up held threads, except for one
-/// fresh try every `RETRY` (up to `MAX_HELD` held): a held request can stay
+/// fresh try after `RETRY` times the number held: a held request can stay
 /// out long after the other process exited, while a new one goes through.
+/// Held threads grow slowly (about 27 in an hour stuck) and the host keeps
+/// trying.
 static HELD: AtomicUsize = AtomicUsize::new(0);
 static LAST_TRY: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 const RETRY: std::time::Duration = std::time::Duration::from_secs(10);
-const MAX_HELD: usize = 4;
 
 /// Whether to send a capture now.
 fn may_try() -> bool {
@@ -218,7 +219,8 @@ fn may_try() -> bool {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let now = std::time::Instant::now();
-    let go = held == 0 || (held < MAX_HELD && last.is_none_or(|at| now - at >= RETRY));
+    let wait = RETRY * u32::try_from(held).unwrap_or(u32::MAX);
+    let go = held == 0 || last.is_none_or(|at| now - at >= wait);
     if go {
         *last = Some(now);
     }
