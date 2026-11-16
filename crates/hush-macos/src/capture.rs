@@ -48,6 +48,8 @@ unsafe extern "C" {
     ) -> Ref;
     fn CGContextSetInterpolationQuality(context: Ref, quality: i32);
     fn CGContextDrawImage(context: Ref, rect: CGRect, image: Ref);
+    fn CGContextSetRGBFillColor(context: Ref, r: f64, g: f64, b: f64, a: f64);
+    fn CGContextFillRect(context: Ref, rect: CGRect);
     fn CGBitmapContextCreateImage(context: Ref) -> Ref;
 }
 
@@ -325,13 +327,44 @@ unsafe fn encode(image: Ref) -> Result<Vec<u8>> {
 }
 
 /// One frame of a recording: the window's picture at its full size, as a
-/// JPEG at `quality`, with its size in pixels.
-pub(crate) fn frame(window_id: u32, quality: f64) -> Result<(Vec<u8>, usize, usize)> {
+/// JPEG at `quality`, with its size in pixels. The window's transparent
+/// rounded corners go onto `backdrop` (RGB) first: JPEG has no alpha, and
+/// encoding turns them white.
+pub(crate) fn frame(
+    window_id: u32,
+    quality: f64,
+    backdrop: (f64, f64, f64),
+) -> Result<(Vec<u8>, usize, usize)> {
     let image = Owned(picture(window_id)?);
-    // SAFETY: `image` is a live CGImage.
+    // SAFETY: `image` is a live CGImage; the context and the flattened
+    // image are created and released here.
     unsafe {
-        let size = (CGImageGetWidth(image.0), CGImageGetHeight(image.0));
-        Ok((encode_at(image.0, quality)?, size.0, size.1))
+        let (width, height) = (CGImageGetWidth(image.0), CGImageGetHeight(image.0));
+        let space = Owned(CGColorSpaceCreateDeviceRGB());
+        // kCGImageAlphaNoneSkipLast: opaque RGB.
+        let context = Owned(CGBitmapContextCreate(
+            ptr::null_mut(),
+            width,
+            height,
+            8,
+            width * 4,
+            space.0,
+            5,
+        ));
+        if context.0.is_null() {
+            return Err(Error::Failed("couldn't create a drawing context".into()));
+        }
+        let rect = CGRect {
+            x: 0.0,
+            y: 0.0,
+            w: width as f64,
+            h: height as f64,
+        };
+        CGContextSetRGBFillColor(context.0, backdrop.0, backdrop.1, backdrop.2, 1.0);
+        CGContextFillRect(context.0, rect);
+        CGContextDrawImage(context.0, rect, image.0);
+        let flat = Owned(CGBitmapContextCreateImage(context.0));
+        Ok((encode_at(flat.0, quality)?, width, height))
     }
 }
 
