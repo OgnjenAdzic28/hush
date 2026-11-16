@@ -12,6 +12,8 @@ use hush_core::{
     Role, Step, WindowInfo, timeline,
 };
 
+use hush_core::cursor::Gesture;
+
 use crate::mirror::Mirror;
 use crate::route::route;
 use crate::{Engine, OUTLINE_BUDGET, key, wait};
@@ -159,7 +161,22 @@ impl<P: Platform> Engine<P> {
                 let events = timeline::drag(start, end);
                 let pace = self.paces.entry(app.pid.unwrap_or(0)).or_default();
                 let pending = wait::begin(&self.platform, app, pace);
+                let pressed = Instant::now();
                 self.platform.play(app, window, &events)?;
+                if self.is_recording(app, window) {
+                    let released = Instant::now();
+                    let started = self.recording_elapsed(released);
+                    crate::record::mark(
+                        &mut self.recording,
+                        key(app, window),
+                        pressed,
+                        start,
+                        Gesture::Drag {
+                            to: end,
+                            until: started,
+                        },
+                    );
+                }
                 let outcome = pending.finish(
                     &self.platform,
                     app,
@@ -244,11 +261,22 @@ impl<P: Platform> Engine<P> {
                     .mirrors
                     .get(&key(app, window))
                     .expect("act creates the mirror first");
-                let route = route(step, |r| {
+                let node = |r: Ref| {
                     mirror.node(r).ok_or_else(|| {
                         Error::Stale(format!("{r} isn't in the window any more; observe again"))
                     })
-                })?;
+                };
+                let route = route(step, node)?;
+                let gesture = gesture_at(step, &node);
+                if let Some((point, gesture)) = gesture {
+                    crate::record::mark(
+                        &mut self.recording,
+                        key(app, window),
+                        Instant::now(),
+                        point,
+                        gesture,
+                    );
+                }
                 let pace = self.paces.entry(app.pid.unwrap_or(0)).or_default();
                 let pending = wait::begin(&self.platform, app, pace);
                 match self.platform.perform(app, window, route.first) {
@@ -424,5 +452,28 @@ fn met<H: Clone + Eq + std::hash::Hash>(until: &Condition, mirror: &Mirror<H>) -
             })
         }
         Condition::Settled | Condition::Elapsed(_) => true,
+    }
+}
+
+/// Where a step acts and how, for a recording's cursor: clicks at their
+/// point, and steps that type into, set or scroll an element at its center.
+fn gesture_at<'a, H: 'a>(
+    step: &Step,
+    node: &impl Fn(Ref) -> Result<&'a hush_core::Node<H>>,
+) -> Option<((f64, f64), Gesture)> {
+    let center = |r: Ref| node(r).ok()?.frame.map(|f| f.center());
+    match step {
+        Step::Click { target, .. } => {
+            Some((crate::route::point(target, node).ok()?, Gesture::Click))
+        }
+        Step::Scroll { target, .. } => {
+            Some((crate::route::point(target, node).ok()?, Gesture::Point))
+        }
+        Step::Set { r, .. }
+        | Step::Select { r }
+        | Step::Focus { r }
+        | Step::Show { r }
+        | Step::Type { into: Some(r), .. } => Some((center(*r)?, Gesture::Point)),
+        _ => None,
     }
 }

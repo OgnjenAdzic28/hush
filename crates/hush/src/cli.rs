@@ -58,6 +58,15 @@ pub(crate) fn command<P: Platform>(
                 .script(&app, source, language)
                 .map_err(|e| e.to_string())
         }
+        "record" => {
+            let app = flags.app()?;
+            if flags.switch("--stop") {
+                engine.record_stop(flags.value("--label"), flags.value("--out"))
+            } else {
+                engine.record_start(&app, flags.value("--window"))
+            }
+            .map_err(|e| e.to_string())
+        }
         "see" => {
             let app = flags.app()?;
             let width = flags
@@ -87,10 +96,19 @@ pub(crate) fn command<P: Platform>(
 
 const DEFAULT_OUT: &str = "hush-see.jpg";
 
-/// The arguments with `see`'s output path made absolute against `cwd`, for
-/// a daemon whose working directory is not the caller's.
+/// The arguments with an output path made absolute against `cwd`, for a
+/// daemon whose working directory is not the caller's: `see`'s (with a
+/// default), and `record --stop`'s when given.
 pub(crate) fn with_absolute_out(args: &[String], cwd: &Path) -> Vec<String> {
     let mut args = args.to_vec();
+    if args.first().map(String::as_str) == Some("record") {
+        if let Some(at) = args.iter().position(|a| a == "--out")
+            && at + 1 < args.len()
+        {
+            args[at + 1] = cwd.join(&args[at + 1]).to_string_lossy().into_owned();
+        }
+        return args;
+    }
     if args.first().map(String::as_str) != Some("see") {
         return args;
     }
@@ -132,7 +150,9 @@ struct Flags {
 }
 
 impl Flags {
-    const VALUED: [&'static str; 5] = ["--window", "--focus", "--ref", "--width", "--out"];
+    const VALUED: [&'static str; 6] = [
+        "--window", "--focus", "--ref", "--width", "--out", "--label",
+    ];
 
     fn parse(args: &[String]) -> Flags {
         let mut flags = Flags {

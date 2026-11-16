@@ -4,6 +4,7 @@
 
 mod act;
 mod mirror;
+mod record;
 mod route;
 mod target;
 mod timeline;
@@ -38,6 +39,7 @@ pub struct Engine<P: Platform> {
     mirrors: HashMap<(u32, u64), Mirror<P::Handle>>,
     paces: HashMap<u32, Pace>,
     options: OutlineOptions,
+    recording: Option<record::Recording>,
 }
 
 impl<P: Platform> std::fmt::Debug for Engine<P> {
@@ -55,6 +57,7 @@ impl<P: Platform> Engine<P> {
             mirrors: HashMap::new(),
             paces: HashMap::new(),
             options: OutlineOptions::default(),
+            recording: None,
         }
     }
 

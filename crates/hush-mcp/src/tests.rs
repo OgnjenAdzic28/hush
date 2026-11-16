@@ -134,7 +134,9 @@ fn a_session_initializes_lists_tools_and_calls_them() {
         .collect();
     assert_eq!(
         names,
-        ["apps", "observe", "act", "timeline", "script", "see"]
+        [
+            "apps", "observe", "act", "timeline", "script", "see", "record"
+        ]
     );
     assert!(
         replies[2]["result"]["content"][0]["text"]

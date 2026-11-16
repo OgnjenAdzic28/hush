@@ -283,6 +283,23 @@ impl Platform for MacPlatform {
         play::play(&target, events)
     }
 
+    fn record_start(&self, window: &WindowInfo) -> Result<u64> {
+        let id = u32::try_from(window.id).map_err(|_| {
+            Error::Unsupported("this window has no window-server id to record".into())
+        })?;
+        crate::record::start(id, window.frame)
+    }
+
+    fn record_stop(
+        &self,
+        id: u64,
+        marks: &[hush_core::cursor::Mark],
+        label: &str,
+        out: &std::path::Path,
+    ) -> Result<String> {
+        crate::record::stop(id, marks, label, out)
+    }
+
     fn script(&self, _app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String> {
         match language {
             ScriptLanguage::AppleScript => script::apple_script(source),
