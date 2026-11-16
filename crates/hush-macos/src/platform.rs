@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use hush_core::timeline::Input;
 use hush_core::{
     Activity, AppInfo, Error, Image, MenuEntry, Op, Platform, Played, Poll, Rect, Result, Rules,
     ScriptLanguage, Settle, Snapshot, Timed, WindowInfo,
@@ -271,6 +272,14 @@ impl Platform for MacPlatform {
         };
         let acting = self.acting_on(app);
         let _turn = lock(&acting);
+        // A press may start a drag-and-drop, whose drop goes to the window
+        // on top at the drop point.
+        if events
+            .iter()
+            .any(|e| matches!(e.input, Input::PointerDown { .. }))
+        {
+            crate::lane::to_top(&window_element)?;
+        }
         play::play(&target, events)
     }
 

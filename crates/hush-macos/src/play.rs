@@ -41,14 +41,21 @@ pub(crate) fn play(target: &Target<'_>, events: &[Timed]) -> Result<Played> {
         }
     }
 
-    let focus = (!target.app.frontmost)
+    // Focus is for pointer events, and for keys into Chromium, which takes
+    // them only in its key window; AppKit apps take keys in the background,
+    // as `act` relies on. A timeline holds it for its whole length, and the
+    // window server has one focused window: a keys-only piece holding it for
+    // minutes made every drag in other apps fail to drop.
+    let chromium = apps::is_chromium(target.app);
+    let needs_focus = has_pointer || (has_keys && chromium);
+    let focus = (!target.app.frontmost && needs_focus)
         .then(|| SyntheticFocus::begin(pointer.pid, pointer.window))
         .transpose()?;
     let result = (|| {
         // Chromium takes keys only in the window it considers key.
         if let Some(focus) = &focus
             && has_keys
-            && apps::is_chromium(target.app)
+            && chromium
         {
             focus.make_key()?;
             let app = Element::application(pointer.pid);
