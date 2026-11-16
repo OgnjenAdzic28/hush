@@ -23,3 +23,23 @@ light and correct with many sessions at once. They only use Hush's MCP tools, th
 
 Before the host, each agent's `hush mcp` was its own process, and macOS serves window captures
 to one live process per program file: the second agent's captures waited forever.
+
+## Real agents and the piano at once (16 Nov 2026)
+
+Three workloads on one host at the same time, all in the background: a Claude Opus agent editing
+in FilmCraft (bench runner in the owner's scratch space), a Claude Sonnet agent running the five
+BenchLab tasks (`bench/cdb`), and Moonlight Sonata through `timeline` (`bench/piano`).
+
+| Workload | Result |
+|---|---|
+| FilmCraft: cut at 10 s, title "Made with Hush", export 1080p | done in 4 min 21 s; the export is 1920x1080 with the title |
+| BenchLab, 5 tasks | 4 passed; MB-09's drag fails here even alone and on older builds (#84) |
+| Piano, 1,142 notes over 4 min 37 s | every note reached the page; Hush posted events 0.33 ms late median, 3 ms worst |
+| The user's front app | never taken by the piano or BenchLab |
+
+The page itself fell behind when FilmCraft started its export (its H.264 encoding competed with the
+window recorder's), stalling up to 8.7 s for 20 s; Hush's posting stayed on time throughout.
+
+The first attempt at this run, before #83, stalled everything for 30 minutes: an app that wasn't
+answering held a lock every session needed. #83 fixed it; with one app frozen, other sessions ran
+80 calls in 1.3 s.
