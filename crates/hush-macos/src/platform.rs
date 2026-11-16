@@ -1,7 +1,7 @@
 //! `hush_core::Platform` for macOS.
 
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use hush_core::{
@@ -10,7 +10,7 @@ use hush_core::{
 };
 
 use crate::ax::{self, Element};
-use crate::script::{self, Scripts};
+use crate::script;
 use crate::seen::{self, Handle};
 use crate::watch::Watcher;
 use crate::{act, apps, capture, cf, menu, play, read, windows};
@@ -20,16 +20,30 @@ use crate::{act, apps, capture, cf, menu, play, read, windows};
 /// fails a step instead of the whole session.
 const AX_TIMEOUT_SECONDS: f32 = 1.5;
 
+/// One platform serves every session in the process, each on its own
+/// thread, so its state sits behind locks held only for map lookups.
 #[derive(Debug)]
 pub struct MacPlatform {
     watcher: Watcher,
-    /// Window elements by window id, refreshed on every `windows` call.
-    windows: RefCell<HashMap<u64, Element>>,
+    /// Window elements by window id with their app's pid, refreshed for one
+    /// app on each of its `windows` calls.
+    windows: Mutex<HashMap<u64, (i32, Element)>>,
     /// Windows on other Spaces found without `AXWindows`.
-    off_space: RefCell<windows::Known>,
-    scripts: RefCell<Scripts>,
+    off_space: Mutex<windows::Known>,
     /// Chromium and Electron apps whose web content was switched on.
-    web_enabled: RefCell<HashSet<i32>>,
+    web_enabled: Mutex<HashSet<i32>>,
+    /// One lock per app for input: two sessions acting on the same app take
+    /// turns, so their clicks and keys never interleave. Different apps run
+    /// at the same time.
+    acting: Mutex<HashMap<i32, Arc<Mutex<()>>>>,
+}
+
+/// Locks `mutex`, ignoring poisoning: a session that panicked mid-call left
+/// at worst a stale cache entry, which the next refresh replaces.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 impl MacPlatform {
@@ -46,10 +60,10 @@ impl MacPlatform {
         Element::system_wide().set_timeout(AX_TIMEOUT_SECONDS);
         Ok(MacPlatform {
             watcher: Watcher::start(),
-            windows: RefCell::default(),
-            off_space: RefCell::default(),
-            scripts: RefCell::default(),
-            web_enabled: RefCell::default(),
+            windows: Mutex::default(),
+            off_space: Mutex::default(),
+            web_enabled: Mutex::default(),
+            acting: Mutex::default(),
         })
     }
 
@@ -70,7 +84,7 @@ impl MacPlatform {
         let Some(pid) = app.pid.map(|p| p as i32) else {
             return;
         };
-        if !self.web_enabled.borrow_mut().insert(pid) || !apps::is_chromium(app) {
+        if !lock(&self.web_enabled).insert(pid) || !apps::is_chromium(app) {
             return;
         }
         self.watcher.watch(pid);
@@ -112,15 +126,20 @@ impl MacPlatform {
     }
 
     fn window_element(&self, app: &AppInfo, window: &WindowInfo) -> Result<Element> {
-        if let Some(element) = self.windows.borrow().get(&window.id) {
+        if let Some((_, element)) = lock(&self.windows).get(&window.id) {
             return Ok(element.clone());
         }
         self.windows(app)?;
-        self.windows
-            .borrow()
+        lock(&self.windows)
             .get(&window.id)
-            .cloned()
+            .map(|(_, element)| element.clone())
             .ok_or_else(|| Error::Stale(format!("window \"{}\" is gone", window.title)))
+    }
+
+    /// Held for the whole of one action or timeline on the app.
+    fn acting_on(&self, app: &AppInfo) -> Arc<Mutex<()>> {
+        let pid = app.pid.map_or(0, |p| p as i32);
+        Arc::clone(lock(&self.acting).entry(pid).or_default())
     }
 }
 
@@ -163,14 +182,14 @@ impl Platform for MacPlatform {
             &Self::app_element(app)?,
             pid,
             created,
-            &mut self.off_space.borrow_mut(),
+            &mut lock(&self.off_space),
         );
-        let mut cache = self.windows.borrow_mut();
-        cache.clear();
+        let mut cache = lock(&self.windows);
+        cache.retain(|_, (owner, _)| *owner != pid);
         Ok(listed
             .into_iter()
             .map(|(info, element)| {
-                cache.insert(info.id, element);
+                cache.insert(info.id, (pid, element));
                 info
             })
             .collect())
@@ -206,10 +225,10 @@ impl Platform for MacPlatform {
                 .ok_or_else(|| Error::NotFound(format!("{} isn't running", app.name)))?;
             // Main window first: it is the one raised, so it stays main.
             let order = self.windows(app)?;
-            let cache = self.windows.borrow();
+            let cache = lock(&self.windows);
             let elements: Vec<Element> = order
                 .iter()
-                .filter_map(|info| cache.get(&info.id).cloned())
+                .filter_map(|info| cache.get(&info.id).map(|(_, element)| element.clone()))
                 .collect();
             drop(cache);
             return crate::lane::park(pid, &elements);
@@ -220,6 +239,8 @@ impl Platform for MacPlatform {
             window,
             window_element: &window_element,
         };
+        let acting = self.acting_on(app);
+        let _turn = lock(&acting);
         act::perform(&target, seen::to_ax(op)?)
     }
 
@@ -241,13 +262,21 @@ impl Platform for MacPlatform {
             window,
             window_element: &window_element,
         };
+        let acting = self.acting_on(app);
+        let _turn = lock(&acting);
         play::play(&target, events)
     }
 
     fn script(&self, _app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String> {
         match language {
-            ScriptLanguage::AppleScript => self.scripts.borrow_mut().apple_script(source),
+            ScriptLanguage::AppleScript => script::apple_script(source),
             ScriptLanguage::JavaScript => script::javascript(source),
         }
     }
 }
+
+// Every session in the process shares one platform.
+const _: () = {
+    const fn shared<T: Send + Sync>() {}
+    shared::<MacPlatform>();
+};

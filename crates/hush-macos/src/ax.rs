@@ -15,6 +15,13 @@ use crate::cf;
 #[derive(Clone)]
 pub struct Element(CFRetained<AXUIElement>);
 
+// SAFETY: an AXUIElement is an immutable reference to a remote UI object;
+// the Accessibility API may be called on it from any thread. Every Hush
+// session runs on its own thread in one shared process.
+unsafe impl Send for Element {}
+// SAFETY: as above; no method mutates the reference.
+unsafe impl Sync for Element {}
+
 impl PartialEq for Element {
     fn eq(&self, other: &Self) -> bool {
         *self.0 == *other.0

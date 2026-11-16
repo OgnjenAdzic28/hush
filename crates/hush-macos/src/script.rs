@@ -2,7 +2,12 @@
 //! repeated script costs no process start and no recompile (osascript takes
 //! about 67 ms cold on an M4 Pro; a compiled in-process run adds well under
 //! a millisecond). JavaScript for Automation goes through osascript.
+//!
+//! NSAppleScript may only be used on the main thread, while sessions run on
+//! threads of their own, so every AppleScript runs on the main queue and the
+//! compiled scripts live there.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -12,14 +17,29 @@ use objc2::runtime::AnyObject;
 use objc2::{AllocAnyThread, msg_send};
 use objc2_foundation::{NSAppleEventDescriptor, NSAppleScript, NSDictionary, NSString};
 
-#[derive(Debug, Default)]
-pub(crate) struct Scripts {
-    compiled: HashMap<String, Retained<NSAppleScript>>,
+thread_local! {
+    /// Only the main thread's copy is ever filled.
+    static COMPILED: RefCell<HashMap<String, Retained<NSAppleScript>>> = RefCell::default();
 }
 
-impl Scripts {
-    pub(crate) fn apple_script(&mut self, source: &str) -> Result<String> {
-        let script = match self.compiled.get(source) {
+/// Runs `source` on the main thread: directly when called there (a process
+/// with one session), otherwise through the main queue, which the process
+/// serving several sessions keeps running.
+pub(crate) fn apple_script(source: &str) -> Result<String> {
+    // SAFETY: a plain query of the calling thread.
+    if unsafe { libc::pthread_main_np() } != 0 {
+        return COMPILED.with(|compiled| run(&mut compiled.borrow_mut(), source));
+    }
+    let mut result = Err(Error::Failed("the script didn't run".into()));
+    dispatch2::DispatchQueue::main().exec_sync(|| {
+        result = COMPILED.with(|compiled| run(&mut compiled.borrow_mut(), source));
+    });
+    result
+}
+
+fn run(compiled: &mut HashMap<String, Retained<NSAppleScript>>, source: &str) -> Result<String> {
+    {
+        let script = match compiled.get(source) {
             Some(script) => script.clone(),
             None => {
                 let script = NSAppleScript::initWithSource(
@@ -35,7 +55,7 @@ impl Scripts {
                         message(error)
                     )));
                 }
-                self.compiled.insert(source.to_owned(), script.clone());
+                compiled.insert(source.to_owned(), script.clone());
                 script
             }
         };
