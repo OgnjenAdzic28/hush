@@ -103,6 +103,31 @@ pub(crate) fn park(pid: i32, windows: &[Element]) -> Result<()> {
     Ok(())
 }
 
+/// Puts `window` above the other windows in the lane, when it's there.
+///
+/// Every app's windows go to the same corner of the lane, so they overlap,
+/// and macOS drops a drag-and-drop on whatever window is at the drop point:
+/// an agent's drag in one app landed in another app's window on top of it.
+/// Clicks and keys go to their window directly and don't need this. Raising
+/// a window orders it front without activating its app; a window outside the
+/// lane is left alone, since raising it would put it over the user's.
+pub(crate) fn to_top(window: &Element) -> Result<()> {
+    let Some(bounds) = LANE
+        .lock()
+        .ok()
+        .and_then(|lane| lane.as_ref().map(|l| l.bounds))
+    else {
+        return Ok(());
+    };
+    let inside = position(window).is_some_and(|p| {
+        p.x >= bounds.x && p.y >= bounds.y && p.x < bounds.x + bounds.w && p.y < bounds.y + bounds.h
+    });
+    if inside {
+        act::perform_action(window, "AXRaise")?;
+    }
+    Ok(())
+}
+
 /// Hides the apps in the lane. Called when the platform is dropped, before
 /// the display goes away with the process.
 pub(crate) fn release() {
