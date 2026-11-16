@@ -107,6 +107,9 @@ pub trait Platform {
         Err(Error::Unsupported("this platform can't record yet".into()))
     }
 
+    /// Stops recording `id` and throws its frames away.
+    fn record_cancel(&self, _id: u64) {}
+
     /// Plays `events` on their schedule from now, on the target app only,
     /// and says how late each one was posted.
     fn play(&self, _app: &AppInfo, _window: &WindowInfo, _events: &[Timed]) -> Result<Played> {
@@ -149,6 +152,9 @@ impl<P: Platform> Platform for std::sync::Arc<P> {
     }
     fn record_start(&self, window: &WindowInfo) -> Result<u64> {
         (**self).record_start(window)
+    }
+    fn record_cancel(&self, id: u64) {
+        (**self).record_cancel(id)
     }
     fn record_stop(
         &self,

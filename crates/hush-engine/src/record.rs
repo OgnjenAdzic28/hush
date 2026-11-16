@@ -77,6 +77,16 @@ impl<P: Platform> Engine<P> {
     }
 }
 
+/// A session that ends without stopping its recording cancels it, so its
+/// capture doesn't run on in the host.
+impl<P: Platform> Drop for Engine<P> {
+    fn drop(&mut self) {
+        if let Some(recording) = self.recording.take() {
+            self.platform.record_cancel(recording.id);
+        }
+    }
+}
+
 /// Notes an action at a window point, when `window` is the one recording.
 /// Takes the field rather than the engine so it can run while a step still
 /// borrows the window's mirror.

@@ -290,6 +290,10 @@ impl Platform for MacPlatform {
         crate::record::start(id, window.frame)
     }
 
+    fn record_cancel(&self, id: u64) {
+        crate::record::cancel(id);
+    }
+
     fn record_stop(
         &self,
         id: u64,
