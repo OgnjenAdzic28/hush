@@ -55,3 +55,11 @@ pub use seen::Handle;
 pub fn release_lane() {
     lane::release();
 }
+
+/// Gives the calling (main) thread to the main dispatch queue for good. A
+/// process serving sessions on other threads calls this, so work that must
+/// happen on the main thread (AppleScript) runs there.
+#[cfg(target_os = "macos")]
+pub fn serve_main_thread() -> ! {
+    dispatch2::dispatch_main()
+}

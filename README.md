@@ -97,9 +97,24 @@ hush act Notes "click b2" "type t1 \"Groceries\"" "key enter"
 hush see Notes --out notes.jpg
 ```
 
-Shell commands share one background `hush daemon` per user, started by the first command and
-gone after 10 idle minutes, so refs carry over and repeat looks answer with diffs, as in an MCP
-session. Set `HUSH_NO_DAEMON=1` to run each command in its own process instead.
+## Many agents at once
+
+Everything runs in one background Hush host per user, started by the first command and gone after
+10 minutes with nothing connected. Each agent's `hush mcp` is a thin pipe to its own session
+there, with its own refs and diffs; shell commands share one session, so refs carry over between
+commands. Agents on different apps work in parallel; two agents on the same app take turns, so
+their clicks and keys never interleave. Set `HUSH_NO_DAEMON=1` to run a command or MCP server in
+its own process instead.
+
+One host isn't only lighter. macOS lets one process per program file read windows: a second Hush
+process started from the same file gets no pixels while the first is alive. Ten MCP servers in ten
+processes would leave nine of them blind.
+
+Ten sessions on one host (an M4 Pro, 16 Nov 2026), each repeating observe, `see`, the menu
+catalog and an AppleScript on FilmCraft and Finder: 500 calls in 2.2 s with no errors, observe
+48 ms and `see` 28 ms at the median, and the host peaked at one core, 101 MB and 23 threads,
+idling at 0% CPU afterwards. Five sessions typing into the same field at once left five whole
+blocks.
 
 ## How it compares
 
@@ -136,8 +151,8 @@ to Hush's lane: a virtual display (1920x1080) that nobody can see, placed diagon
 of your main display so the pointer can't wander onto it. There the windows render, take clicks,
 scrolls and keys, can be captured, and Chromium keeps its pages' accessibility trees. An app that
 was hidden (cmd+H, or a lane tool such as Doorman) shows itself only there, without activating.
-The display exists while the Hush daemon or MCP server runs; when that process ends, even by a
-signal, the apps it moved are hidden first, so nothing lands on your screen.
+Every session shares the host's one lane. It exists while the host runs; when the host exits, even
+by a signal, the apps in it are hidden first, so nothing lands on your screen.
 
 Use it for apps the agent launched: it takes their windows off your screen until you bring them
 back.

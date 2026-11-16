@@ -180,17 +180,58 @@ fn picture(window_id: u32) -> Result<Ref> {
              a lane step shows it)"
                 .into(),
         )),
-        private::Capture::Blocked => {
-            let exe = std::env::current_exe()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "hush".into());
-            Err(Error::Permission(format!(
-                "macOS held this process's request to read windows for a Screen Recording decision. \
-                 Turn on Screen Recording for {exe} (add it with + if it isn't listed) in System \
-                 Settings > Privacy & Security > Screen & System Audio Recording, then start it again"
-            )))
-        }
+        private::Capture::Blocked => Err(blocked()),
     }
+}
+
+/// Why a capture got no answer. macOS lets only one live process per
+/// program file read windows: a second Hush process started from the same
+/// file waits forever while the first is alive. That, not a missing
+/// permission, is the usual cause; Screen Recording is the other.
+fn blocked() -> Error {
+    let others = others_running_this_file();
+    if others.is_empty() {
+        return Error::Permission(
+            "the window server didn't answer a request to read windows within 2 s. Turn on \
+             Screen Recording for the app that started Hush (System Settings > Privacy & \
+             Security > Screen & System Audio Recording), then start Hush again"
+                .into(),
+        );
+    }
+    let pids: Vec<String> = others.iter().map(i32::to_string).collect();
+    Error::Failed(format!(
+        "the window server didn't answer a request to read windows within 2 s: macOS lets only \
+         one process per program file read windows, and other processes run this file (pid {}). \
+         Agents and shell commands share one Hush host by default; a process started with \
+         HUSH_NO_DAEMON set, or a second copy of the host, gets in the way. Stop it and try again",
+        pids.join(", ")
+    ))
+}
+
+/// Pids of other processes started from this process's executable.
+fn others_running_this_file() -> Vec<i32> {
+    let Ok(me) = std::env::current_exe().and_then(std::fs::canonicalize) else {
+        return vec![];
+    };
+    let mut pids = vec![0i32; 4096];
+    // SAFETY: the buffer holds `pids.len()` pids and its size is passed in bytes.
+    let count = unsafe {
+        libc::proc_listallpids(pids.as_mut_ptr().cast(), (pids.len() * 4) as libc::c_int)
+    };
+    pids.truncate(usize::try_from(count).unwrap_or(0));
+    let own = std::process::id() as i32;
+    pids.into_iter()
+        .filter(|&pid| pid != own && pid > 0)
+        .filter(|&pid| {
+            let mut path = [0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+            // SAFETY: the buffer and its size match.
+            let len =
+                unsafe { libc::proc_pidpath(pid, path.as_mut_ptr().cast(), path.len() as u32) };
+            len > 0
+                && std::path::Path::new(std::str::from_utf8(&path[..len as usize]).unwrap_or(""))
+                    == me
+        })
+        .collect()
 }
 
 /// Contrast factor around mid-gray (1.4 measured best of 1.0 to 2.0).
