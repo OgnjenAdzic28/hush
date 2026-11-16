@@ -40,6 +40,8 @@ use crate::{capture, cursor_art};
 
 /// Frames a second. One capture takes 15 to 33 ms, so 30 leaves room.
 const FPS: f64 = 30.0;
+/// What shows through the window's transparent corners.
+const BACKDROP: (f64, f64, f64) = (0.043, 0.043, 0.055);
 /// JPEG quality of the frames kept until stop.
 const QUALITY: f64 = 0.92;
 /// Bits a second per pixel of the movie: sharp interface text at 1080p.
@@ -67,7 +69,7 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 /// Starts recording the window. Fails at once when it can't be captured.
 pub(crate) fn start(window_id: u32, frame: Rect) -> Result<u64> {
     let started = Instant::now();
-    let (first, width, height) = capture::frame(window_id, QUALITY)?;
+    let (first, width, height) = capture::frame(window_id, QUALITY, BACKDROP)?;
     let id = NEXT.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("hush-recording-{}-{id}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| Error::Failed(format!("recording folder: {e}")))?;
@@ -93,7 +95,7 @@ pub(crate) fn start(window_id: u32, frame: Rect) -> Result<u64> {
                     thread::sleep(due - now);
                 }
                 let at = started.elapsed();
-                if let Ok((jpeg, w, h)) = capture::frame(window_id, QUALITY)
+                if let Ok((jpeg, w, h)) = capture::frame(window_id, QUALITY, BACKDROP)
                     && (w, h) == shots.size
                 {
                     let path = shots.dir.join(format!("{}.jpg", shots.frames.len()));
@@ -231,11 +233,31 @@ fn write_movie(
         let pool = adaptor
             .pixelBufferPool()
             .ok_or_else(|| failed("no pixel buffer pool"))?;
-        for (t, path) in &shots.frames {
-            let Ok(jpeg) = std::fs::read(path) else {
-                continue;
-            };
-            let Some(image) = decode(&jpeg) else { continue };
+        // A steady 30 frames a second: each shows the latest window frame
+        // taken by then, with the cursor drawn for its own moment, so the
+        // cursor moves smoothly even when captures came slower (several
+        // windows recording at once).
+        let end = shots.frames.last().map_or(Duration::ZERO, |(t, _)| *t);
+        let count = (end.as_secs_f64() * FPS).floor() as u64 + 1;
+        let mut shown: Option<(usize, *mut c_void)> = None;
+        for n in 0..count {
+            let t = Duration::from_secs_f64(n as f64 / FPS);
+            let latest = shots
+                .frames
+                .partition_point(|(at, _)| *at <= t)
+                .saturating_sub(1);
+            if shown.is_none_or(|(index, _)| index != latest) {
+                let Some(image) = std::fs::read(&shots.frames[latest].1)
+                    .ok()
+                    .and_then(|jpeg| decode(&jpeg))
+                else {
+                    continue;
+                };
+                if let Some((_, old)) = shown.replace((latest, image)) {
+                    CGImageRelease(old);
+                }
+            }
+            let Some((_, image)) = shown else { continue };
             let buffer = frame_buffer(&pool).ok_or_else(|| failed("no pixel buffer"))?;
             CVPixelBufferLockBaseAddress(&buffer, CVPixelBufferLockFlags(0));
             let space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -253,7 +275,7 @@ fn write_movie(
             if !context.is_null() {
                 // The window's rounded corners are transparent, and pool
                 // buffers come back with old pixels in them.
-                CGContextSetRGBFillColor(context, 0.043, 0.043, 0.055, 1.0);
+                CGContextSetRGBFillColor(context, BACKDROP.0, BACKDROP.1, BACKDROP.2, 1.0);
                 CGContextFillRect(
                     context,
                     CGRect {
@@ -273,24 +295,29 @@ fn write_movie(
                     },
                     image,
                 );
-                if let Some(pose) = cursor::pose(marks, *t) {
+                if let Some(pose) = cursor::pose(marks, t) {
                     // Window points with y down, as marks are.
                     CGContextTranslateCTM(context, 0.0, height as f64);
                     CGContextScaleCTM(context, scale, -scale);
-                    cursor_art::draw(context, pose, marks, *t, label, tint, points.0);
+                    cursor_art::draw(context, pose, marks, t, label, tint, points.0);
                 }
                 CGContextRelease(context);
             }
             CVPixelBufferUnlockBaseAddress(&buffer, CVPixelBufferLockFlags(0));
-            CGImageRelease(image);
             while !input.isReadyForMoreMediaData() {
                 // The encoder is behind; it takes a frame in a few ms.
                 thread::sleep(Duration::from_millis(2));
             }
-            let time = CMTime::new(t.as_millis() as i64, 1000);
+            let time = CMTime::new(n as i64, FPS as i32);
             if !adaptor.appendPixelBuffer_withPresentationTime(&buffer, time) {
+                if let Some((_, image)) = shown {
+                    CGImageRelease(image);
+                }
                 return Err(failed("a frame was refused"));
             }
+        }
+        if let Some((_, image)) = shown {
+            CGImageRelease(image);
         }
         input.markAsFinished();
         #[allow(deprecated)]
