@@ -129,7 +129,8 @@ Measured head to head on the same window and the same Mac (details in
 | Peekaboo | 3,506 ms | no | no | 13,847 tokens |
 | open-computer-use | 4,297 ms | yes | yes | 2,654 tokens |
 
-[^tools]: Measured with five tools. With `timeline` added it is 755 tokens.
+[^tools]: Measured with five tools. With `timeline` added it is 755 tokens; with the menu catalog and
+    `record`, about 920.
 
 ## Cua Driver Bench v2 (quiet run)
 
@@ -143,6 +144,20 @@ the official runner in [docs/benchmark.md](docs/benchmark.md)):
 | Claude Haiku 5.5 | 15/15 | 15/15 | 21.6 s | 14 |
 
 It's 5 of Bench v2's 8 background tasks; the multi-app ones need apps not installed here.
+
+## Recording demos
+
+`record` films a window while Hush works in it, wherever the window is (the lane included), and
+draws an agent cursor into the video: it glides to each click, field or drag and lands exactly when
+the action happened, leans into its direction of travel, dips on clicks with a ripple, and carries
+a name tag. The cursor exists only in the video, never on your screen. Pacing is real, so the video
+shows Hush's real speed.
+
+```sh
+hush record Notes                     # start
+hush act Notes "click b2" "type t1 \"Groceries\""
+hush record Notes --stop --label Claude --out demo.mp4
+```
 
 ## The lane
 

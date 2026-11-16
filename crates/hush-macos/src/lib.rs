@@ -12,6 +12,8 @@ mod capture;
 #[cfg(target_os = "macos")]
 mod cf;
 #[cfg(target_os = "macos")]
+mod cursor_art;
+#[cfg(target_os = "macos")]
 mod keys;
 #[cfg(target_os = "macos")]
 mod lane;
@@ -27,6 +29,8 @@ mod pointer;
 mod private;
 #[cfg(target_os = "macos")]
 mod read;
+#[cfg(target_os = "macos")]
+mod record;
 #[cfg(target_os = "macos")]
 mod roles;
 #[cfg(target_os = "macos")]

@@ -104,6 +104,22 @@ pub(crate) fn list() -> Value {
                 },
                 "required": ["app"]
             }
+        },
+        {
+            "name": "record",
+            "description": "Record a window to MP4 for a demo: start, act, then call with stop. The video \
+                shows an animated cursor at each action, in real time.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "app": {"type": "string"},
+                    "window": {"type": "string"},
+                    "stop": {"type": "boolean"},
+                    "label": {"type": "string", "description": "Cursor name"},
+                    "out": {"type": "string", "description": "MP4 path"}
+                },
+                "required": ["app"]
+            }
         }
     ])
 }
@@ -186,6 +202,16 @@ fn run<P: Platform>(engine: &mut Engine<P>, name: &str, args: &Value) -> Result<
                 "mimeType": "image/jpeg"
             }]))
         }
+        "record" if args.get("stop").and_then(Value::as_bool) == Some(true) => text(
+            engine
+                .record_stop(string("label"), string("out"))
+                .map_err(|e| e.to_string())?,
+        ),
+        "record" => text(
+            engine
+                .record_start(app()?, string("window"))
+                .map_err(|e| e.to_string())?,
+        ),
         other => Err(format!("unknown tool '{other}'")),
     }
 }

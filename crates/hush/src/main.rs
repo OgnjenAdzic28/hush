@@ -30,6 +30,8 @@ usage:
   hush timeline APP [--window W] EVENT...   events on a schedule; - reads them from stdin
   hush script APP SOURCE [--js]
   hush see APP [--window W] [--ref REF] [--width N] [--out FILE]
+  hush record APP [--window W]              start recording the window (acts leave a cursor)
+  hush record APP --stop [--label L] [--out FILE.mp4]
 
 steps: ";
 

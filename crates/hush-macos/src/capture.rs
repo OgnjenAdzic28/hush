@@ -320,9 +320,24 @@ unsafe fn resize(image: Ref, target_w: usize, target_h: usize) -> Result<Owned> 
 }
 
 unsafe fn encode(image: Ref) -> Result<Vec<u8>> {
+    // SAFETY: the caller's image is live.
+    unsafe { encode_at(image, QUALITY) }
+}
+
+/// One frame of a recording: the window's picture at its full size, as a
+/// JPEG at `quality`, with its size in pixels.
+pub(crate) fn frame(window_id: u32, quality: f64) -> Result<(Vec<u8>, usize, usize)> {
+    let image = Owned(picture(window_id)?);
+    // SAFETY: `image` is a live CGImage.
+    unsafe {
+        let size = (CGImageGetWidth(image.0), CGImageGetHeight(image.0));
+        Ok((encode_at(image.0, quality)?, size.0, size.1))
+    }
+}
+
+unsafe fn encode_at(image: Ref, quality_value: f64) -> Result<Vec<u8>> {
     // SAFETY: each object is created here and released by `Owned`.
     unsafe {
-        let quality_value: f64 = QUALITY;
         let data = Owned(CFDataCreateMutable(kCFAllocatorDefault, 0));
         let kind = Owned(CFStringCreateWithCString(
             kCFAllocatorDefault,

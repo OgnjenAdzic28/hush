@@ -88,6 +88,25 @@ pub trait Platform {
         ))
     }
 
+    /// Starts recording the window to a movie, without touching the user's
+    /// screen. Returns an id for `record_stop`.
+    fn record_start(&self, _window: &WindowInfo) -> Result<u64> {
+        Err(Error::Unsupported("this platform can't record yet".into()))
+    }
+
+    /// Stops recording `id` and writes the movie to `out`, with an agent
+    /// cursor drawn from `marks` and labelled `label` (none when empty).
+    /// Returns a line saying what was written.
+    fn record_stop(
+        &self,
+        _id: u64,
+        _marks: &[crate::cursor::Mark],
+        _label: &str,
+        _out: &std::path::Path,
+    ) -> Result<String> {
+        Err(Error::Unsupported("this platform can't record yet".into()))
+    }
+
     /// Plays `events` on their schedule from now, on the target app only,
     /// and says how late each one was posted.
     fn play(&self, _app: &AppInfo, _window: &WindowInfo, _events: &[Timed]) -> Result<Played> {
@@ -127,6 +146,18 @@ impl<P: Platform> Platform for std::sync::Arc<P> {
     }
     fn play(&self, app: &AppInfo, window: &WindowInfo, events: &[Timed]) -> Result<Played> {
         (**self).play(app, window, events)
+    }
+    fn record_start(&self, window: &WindowInfo) -> Result<u64> {
+        (**self).record_start(window)
+    }
+    fn record_stop(
+        &self,
+        id: u64,
+        marks: &[crate::cursor::Mark],
+        label: &str,
+        out: &std::path::Path,
+    ) -> Result<String> {
+        (**self).record_stop(id, marks, label, out)
     }
 }
 
