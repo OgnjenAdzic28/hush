@@ -54,6 +54,7 @@ dependencies = [
 name = "hush-macos"
 version = "0.1.0"
 dependencies = [
+ "dispatch2",
  "hush-core",
  "libc",
  "objc2",

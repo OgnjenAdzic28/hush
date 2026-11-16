@@ -97,6 +97,39 @@ pub trait Platform {
     }
 }
 
+/// One platform shared by several engines (one engine per session).
+impl<P: Platform> Platform for std::sync::Arc<P> {
+    type Handle = P::Handle;
+
+    fn apps(&self, query: Option<&str>) -> Result<Vec<AppInfo>> {
+        (**self).apps(query)
+    }
+    fn windows(&self, app: &AppInfo) -> Result<Vec<WindowInfo>> {
+        (**self).windows(app)
+    }
+    fn read(&self, app: &AppInfo, window: &WindowInfo) -> Result<Snapshot<Self::Handle>> {
+        (**self).read(app, window)
+    }
+    fn activity(&self, app: &AppInfo) -> Activity {
+        (**self).activity(app)
+    }
+    fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Self::Handle>) -> Result<()> {
+        (**self).perform(app, window, op)
+    }
+    fn capture(&self, window: &WindowInfo, region: Option<Rect>, max_width: u32) -> Result<Image> {
+        (**self).capture(window, region, max_width)
+    }
+    fn script(&self, app: &AppInfo, source: &str, language: ScriptLanguage) -> Result<String> {
+        (**self).script(app, source, language)
+    }
+    fn menus(&self, app: &AppInfo) -> Result<Vec<MenuEntry>> {
+        (**self).menus(app)
+    }
+    fn play(&self, app: &AppInfo, window: &WindowInfo, events: &[Timed]) -> Result<Played> {
+        (**self).play(app, window, events)
+    }
+}
+
 /// Errors are read by a model, so each says what happened and, where it
 /// helps, what to do next.
 #[derive(Clone, Debug, PartialEq, Eq)]

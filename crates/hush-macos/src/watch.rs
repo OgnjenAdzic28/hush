@@ -52,14 +52,7 @@ const NOTIFICATIONS: [&str; 17] = [
 ];
 
 type Counts = Mutex<HashMap<i32, Activity>>;
-type Created = Mutex<HashMap<i32, Vec<SentElement>>>;
-
-/// An element handed from the event thread to the caller's thread.
-struct SentElement(Element);
-
-// SAFETY: an AXUIElement is an immutable reference to a remote UI object;
-// the Accessibility API may be called on it from any thread.
-unsafe impl Send for SentElement {}
+type Created = Mutex<HashMap<i32, Vec<Element>>>;
 
 /// What one observer's callback does with its notifications.
 enum Counter {
@@ -75,6 +68,16 @@ struct Loop(CFRetained<CFRunLoop>);
 
 // SAFETY: CFRunLoopAddSource and CFRunLoopWakeUp are documented thread-safe.
 unsafe impl Send for Loop {}
+// SAFETY: as above; the handle is only used for those two calls.
+unsafe impl Sync for Loop {}
+
+/// An observer held only to keep it registered; its callbacks run on the
+/// event thread's run loop.
+struct Kept(#[allow(dead_code)] CFRetained<AXObserver>);
+
+// SAFETY: a kept observer is never called, only released on drop, and
+// CFRelease is thread-safe.
+unsafe impl Send for Kept {}
 
 pub(crate) struct Watcher {
     counts: Arc<Counts>,
@@ -82,7 +85,7 @@ pub(crate) struct Watcher {
     run_loop: Loop,
     thread: Thread,
     /// Observers stay alive (and registered) for as long as the watcher.
-    observers: Mutex<HashMap<i32, CFRetained<AXObserver>>>,
+    observers: Mutex<HashMap<i32, Kept>>,
     /// Apps whose window observer was asked for. Registering one is a round
     /// trip to the app that blocks for the messaging timeout when the app
     /// is busy, so it happens on the registrar thread, never in a call.
@@ -152,7 +155,7 @@ impl Watcher {
             .expect("counts lock")
             .entry(pid)
             .or_default();
-        observers.insert(pid, observer);
+        observers.insert(pid, Kept(observer));
     }
 
     /// Starts keeping the windows `pid` creates, if it isn't yet.
@@ -175,9 +178,6 @@ impl Watcher {
             .expect("created lock")
             .remove(&pid)
             .unwrap_or_default()
-            .into_iter()
-            .map(|sent| sent.0)
-            .collect()
     }
 
     pub(crate) fn activity(&self, pid: i32) -> Activity {
@@ -285,7 +285,7 @@ unsafe extern "C-unwind" fn callback(
             };
             if let Ok(mut created) = created.lock() {
                 let windows = created.entry(*pid).or_default();
-                windows.extend(found.into_iter().map(SentElement));
+                windows.extend(found);
                 // Bounded for an app nobody asks about: the oldest go first.
                 let excess = windows.len().saturating_sub(64);
                 windows.drain(..excess);
