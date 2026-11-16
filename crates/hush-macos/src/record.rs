@@ -95,9 +95,9 @@ pub(crate) fn start(window_id: u32, frame: Rect) -> Result<u64> {
                     thread::sleep(due - now);
                 }
                 let at = started.elapsed();
-                if let Ok((jpeg, w, h)) = capture::frame(window_id, QUALITY, BACKDROP)
-                    && (w, h) == shots.size
-                {
+                // A frame of another size (the app resized its window) is
+                // scaled to the first frame's size when the movie is written.
+                if let Ok((jpeg, _, _)) = capture::frame(window_id, QUALITY, BACKDROP) {
                     let path = shots.dir.join(format!("{}.jpg", shots.frames.len()));
                     if std::fs::write(&path, jpeg).is_ok() {
                         shots.frames.push((at, path));
