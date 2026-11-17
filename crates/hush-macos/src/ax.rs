@@ -87,7 +87,12 @@ impl Element {
     }
 
     /// Several attributes in one round trip. Missing ones come back as `None`.
-    pub(crate) fn values(&self, attributes: &CFArray<CFString>) -> Vec<Option<CFRetained<CFType>>> {
+    /// `Err` means the app didn't answer within the messaging timeout: a walk
+    /// stops there instead of waiting the timeout again for every element.
+    pub(crate) fn values(
+        &self,
+        attributes: &CFArray<CFString>,
+    ) -> Result<Vec<Option<CFRetained<CFType>>>, Unresponsive> {
         let mut out: *const CFArray = ptr::null();
         // SAFETY: `attributes` is an array of CFStrings and `out` a valid out-pointer.
         let status = unsafe {
@@ -97,16 +102,24 @@ impl Element {
                 NonNull::from(&mut out),
             )
         };
+        if status == AXError::CannotComplete {
+            return Err(Unresponsive);
+        }
         let wanted = attributes.len();
         let Some(array) = NonNull::new(out.cast_mut()).filter(|_| status == AXError::Success)
         else {
-            return vec![None; wanted];
+            return Ok(vec![None; wanted]);
         };
         // SAFETY: copy rule, as above; the array holds CF values.
         let array: CFRetained<CFArray<CFType>> = unsafe { CFRetained::from_raw(array.cast()) };
-        (0..wanted)
+        Ok((0..wanted)
             .map(|i| array.get(i).filter(|v| !cf::is_error(v)))
-            .collect()
+            .collect())
+    }
+
+    /// False when the app doesn't answer even a one-attribute read in time.
+    pub(crate) fn responding(&self) -> bool {
+        !matches!(self.value("AXRole"), Err(AXError::CannotComplete))
     }
 
     pub(crate) fn string(&self, attribute: &str) -> Option<String> {
@@ -125,6 +138,10 @@ impl Element {
             .unwrap_or_default()
     }
 }
+
+/// The app stopped answering Accessibility calls within the timeout.
+#[derive(Debug)]
+pub(crate) struct Unresponsive;
 
 /// The elements in an array value (AXChildren, AXWindows, AXVisibleRows).
 pub(crate) fn elements_of(value: &CFType) -> Vec<Element> {

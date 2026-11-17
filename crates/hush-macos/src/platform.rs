@@ -47,6 +47,13 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+fn not_responding(app: &AppInfo) -> Error {
+    Error::Failed(format!(
+        "{} isn't responding: it didn't answer Accessibility within {AX_TIMEOUT_SECONDS} s",
+        app.name
+    ))
+}
+
 impl MacPlatform {
     /// Fails with a permission error, naming the setting, when this process
     /// isn't allowed to use Accessibility.
@@ -186,7 +193,15 @@ impl Platform for MacPlatform {
             .filter(|((owner, _), _)| *owner == pid)
             .map(|(key, element)| (*key, element.clone()))
             .collect();
-        let listed = windows::list(&Self::app_element(app)?, pid, created, &mut known);
+        // Every call starts here. A hung app would otherwise wait out the
+        // timeout once per listing route and then report "no open windows";
+        // one quick read (well under a millisecond for a live app) fails it
+        // in a single timeout with the real reason.
+        let app_element = Self::app_element(app)?;
+        if !app_element.responding() {
+            return Err(not_responding(app));
+        }
+        let listed = windows::list(&app_element, pid, created, &mut known);
         {
             let mut off_space = lock(&self.off_space);
             off_space.retain(|(owner, _), _| *owner != pid);
@@ -209,10 +224,9 @@ impl Platform for MacPlatform {
             self.watcher.watch(pid as i32);
         }
         let menus = read::menu_titles(&Self::app_element(app)?);
-        Ok(seen::with_pixels(
-            read::window(app, window, &element, menus),
-            window,
-        ))
+        let snapshot =
+            read::window(app, window, &element, menus).map_err(|_| not_responding(app))?;
+        Ok(seen::with_pixels(snapshot, window))
     }
 
     fn activity(&self, app: &AppInfo) -> Activity {

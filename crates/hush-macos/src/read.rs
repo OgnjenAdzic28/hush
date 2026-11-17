@@ -13,7 +13,7 @@ use std::collections::HashSet;
 use hush_core::{Actions, AppInfo, Node, Rect, Role, Snapshot, States, WindowInfo};
 use objc2_core_foundation::{CFArray, CFRetained, CFString, CFType};
 
-use crate::ax::{Element, elements_of};
+use crate::ax::{Element, Unresponsive, elements_of};
 use crate::cf;
 use crate::roles::{self, Mapped};
 
@@ -57,7 +57,7 @@ pub(crate) fn window(
     info: &WindowInfo,
     window: &Element,
     menus: Vec<String>,
-) -> Snapshot<Element> {
+) -> Result<Snapshot<Element>, Unresponsive> {
     let names: Vec<CFRetained<CFString>> = ATTRIBUTES.iter().map(|a| cf::cfstr(a)).collect();
     let attributes = CFArray::from_retained_objects(&names);
     // The window may have moved since it was listed; its own frame, read
@@ -70,7 +70,7 @@ pub(crate) fn window(
     // Depth-first, children pushed in reverse so nodes come out in pre-order.
     let mut stack: Vec<(Element, Option<usize>, Rect)> = vec![(window.clone(), None, screen_clip)];
     while let Some((element, parent, clip)) = stack.pop() {
-        let values = element.values(&attributes);
+        let values = element.values(&attributes)?;
         let get = |a: A| values[a as usize].as_deref();
 
         let role_name = get(A::Role).and_then(cf::string).unwrap_or_default();
@@ -152,7 +152,7 @@ pub(crate) fn window(
             stack.push((child, Some(index), child_clip));
         }
     }
-    Snapshot::new(app.clone(), info, nodes, menus)
+    Ok(Snapshot::new(app.clone(), info, nodes, menus))
 }
 
 /// Titles of the app's menu bar menus, without the Apple menu.
