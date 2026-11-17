@@ -128,14 +128,18 @@ unsafe fn ripples(context: Ref, marks: &[Mark], t: Duration, tint: (f64, f64, f6
     }
 }
 
-/// The arrow, tip at the origin, pointing up and to the left, with rounded
-/// corners.
+/// The arrow, tip at the origin, pointing up and to the left: the classic
+/// pointer with a stem, every corner rounded. The brand art draws the same
+/// outline, so recordings and the icon match.
 unsafe fn arrow(context: Ref, pose: Pose, tint: (f64, f64, f64)) {
     let corners = [
-        (0.0, 0.0, 1.2),
-        (2.6, 17.4, 2.0),
-        (6.6, 11.4, 1.6),
-        (16.4, 10.2, 2.0),
+        (0.0, 0.0, 1.3),
+        (0.0, 16.6, 1.5),
+        (4.1, 12.9, 0.7),
+        (6.7, 18.9, 1.0),
+        (9.3, 17.8, 1.0),
+        (6.8, 11.9, 0.7),
+        (12.3, 11.9, 1.5),
     ];
     // SAFETY: as in `draw`.
     unsafe {
