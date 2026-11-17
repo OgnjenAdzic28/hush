@@ -79,7 +79,9 @@ pub(crate) fn press_shortcut(app: &Element, combo: KeyCombo) -> Result<bool> {
     // Breadth-first over every menu, one batched read per item.
     let mut queue: Vec<Element> = bar.elements("AXChildren");
     while let Some(item) = queue.pop() {
-        let values = item.values(&attributes);
+        let Ok(values) = item.values(&attributes) else {
+            break;
+        };
         let character = values[1].as_deref().and_then(cf::string);
         if let Some(character) = character
             && character.chars().count() == 1
@@ -130,7 +132,9 @@ pub(crate) fn catalog(app: &Element) -> Result<Vec<MenuEntry>> {
         .map(|item| (item, Vec::new()))
         .collect();
     while let Some((item, parent)) = stack.pop() {
-        let values = item.values(&attributes);
+        let Ok(values) = item.values(&attributes) else {
+            break;
+        };
         let title = values[0]
             .as_deref()
             .and_then(cf::string)
