@@ -42,7 +42,7 @@ private test; keep their recordings private.
   `MediaRecorder` instead (to the speakers too with `--audible`), one recording per audio context,
   saved on SIGUSR1. Every key the page receives is logged with its time.
   Chrome would be the obvious browser, but it takes focus when it launches.
-- `compile.py`: MIDI to timeline lines for virtualpiano.net's keyboard (white keys C1 to C6 on
+- `compile.py`: MIDI to timeline lines for virtualpiano.net's keyboard (white keys C2 to C7 on
   `1` to `m`, black keys with Shift), with tempo changes, the sustain pedal and re-struck keys.
   `--track` picks tracks from a band arrangement; drums are always left out.
 - `Rec.swift`: records one window with ScreenCaptureKit, wherever it is (the lane included),
