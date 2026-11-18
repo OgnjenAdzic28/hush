@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Compiles a MIDI file into a Hush timeline for virtualpiano.net's keyboard.
 
-virtualpiano.net: white keys C1..C6 are "1234567890qwertyuiopasdfghjklzxcvbnm"; a black key is
+virtualpiano.net: white keys C2..C7 are "1234567890qwertyuiopasdfghjklzxcvbnm"; a black key is
 Shift plus the white key just below it. The sustain pedal (CC64) is honored by holding notes until
-it lifts, as a pianist's pedal would. Notes outside C1..C6 move by octaves into range.
+it lifts, as a pianist's pedal would. Notes outside C2..C7 move by octaves into range.
+The page shows each note's name as it plays: `t` is middle C (C4), so `1` is C2.
 
 Usage: compile.py IN.mid OUT.txt [--from-ms N] [--to-ms N] [--track NAME] [--list]
 --track keeps only tracks whose name contains NAME (several, comma-separated) (tempo still applies); drums (channel 10) are
@@ -15,7 +16,7 @@ import struct
 import sys
 
 WHITE = "1234567890qwertyuiopasdfghjklzxcvbnm"
-LOW, HIGH = 24, 84  # C1, C6
+LOW, HIGH = 36, 96  # C2, C7
 WHITE_STEPS = {0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6}
 
 
