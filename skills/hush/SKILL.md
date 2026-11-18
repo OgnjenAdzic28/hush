@@ -1,0 +1,106 @@
+---
+name: hush
+description: Drive Mac apps in the background with the hush CLI. Read a window as a short outline, then click, type, pick menus and wait in one batch, without taking the user's focus, pointer or clipboard. Use when a task needs a desktop app on macOS (Notes, Finder, Xcode, a game, any app), or a browser page that only a real window can reach.
+---
+
+# Hush: computer use for agents
+
+Hush reads an app's window as text and acts on it in the background. The user keeps working in
+front; nothing comes to the front, the pointer doesn't move, the clipboard isn't touched. Every
+command answers as soon as the app has settled, so there is nothing to sleep for.
+
+## Check once
+
+```sh
+hush apps            # running apps; fails if hush is missing or lacks permission
+```
+
+If `hush` isn't on PATH, build it (`cargo build --release` in the repo, binary at
+`target/release/hush`). If a command says it lacks Accessibility or Screen Recording, ask the user
+to grant it to the app running you, in System Settings > Privacy & Security. Don't try to work
+around it.
+
+## The loop
+
+1. **Find the app.** `hush apps notes`. Use the name it prints.
+2. **Read it.** `hush observe Notes`. One line per element, each with a ref (`b3` button, `t1`
+   text field, `r4` row...):
+
+   ```text
+   # Notes · window "Notes" 1100x700 · focus t2
+   b1 button "New Note"
+   t1 search field "Search"
+   r4 row "Groceries"
+   t2 textarea = "milk, eggs" (10 chars)
+   ```
+
+3. **Act, in one batch.** Put every step you already know into one call. Steps run in order, each
+   waits for the app to settle, and the batch stops at the first failure:
+
+   ```sh
+   hush act Notes "click b1" "type t2 \"Call the dentist\"" "key cmd+s"
+   ```
+
+   The reply is only what changed (`+` added, `-` removed, `~` changed), so read it instead of
+   observing again.
+4. **Repeat** from the reply. `hush observe Notes` again returns only changes since your last
+   read; `--full` gives the whole outline.
+
+Refs stay valid across calls while the element exists. All `hush` shell commands share one
+session, so refs from one command work in the next.
+
+## Steps
+
+| Step | Use |
+|---|---|
+| `click REF` / `click X,Y` | press a button, row, link; X,Y are window points |
+| `double REF`, `right REF` | double click, right click |
+| `type [REF] TEXT` | type into a field (or the focused one); quote text with spaces |
+| `set REF VALUE` | set a field, slider or checkbox directly; faster than typing |
+| `key COMBO [xN]` | `enter`, `cmd+s`, `shift+tab`, `down x3` |
+| `menu A > B` | a menu bar command: `menu File > Export…` |
+| `pick REF OPTION` | choose from a popup or combo box |
+| `select REF`, `focus REF`, `show REF` | select a row, focus a field, scroll it into view |
+| `scroll REF up\|down\|left\|right [N]` | scroll a list or page |
+| `drag A to B` | refs or X,Y; dragging onto a ref takes its place in a list |
+| `wait REF`, `wait gone REF`, `wait text "T"` | wait for something to appear or go (default 10 s, `within 30s`) |
+| `lane` | move the app's windows off screen, where they still render and take input |
+
+## The other commands
+
+- **Scriptable apps** (Finder, Mail, Music, Safari, most Apple apps): write the whole script,
+  `tell` included: `hush script Finder 'tell application "Finder" to get name of startup disk'`.
+  One AppleScript line often replaces many clicks. `--js` for JXA.
+- **Menus**: `hush observe Xcode --menus` lists every command with its shortcut.
+- **Big windows**: long parts are folded. Open one with `hush observe Mail --focus e7`.
+- **Pixels**: `hush see Preview --out shot.jpg` (or `--ref v2` for one element). Only for what the
+  outline can't show: canvases, images, video, charts. Apps that draw their own interface (games,
+  some Electron apps) also show labels read from pixels as `v` refs; click or drag them like any
+  ref.
+- **Timing**: `hush timeline APP` plays keys and pointer events on a millisecond schedule (music,
+  games, holds). Plan the whole sequence, then send it once, one event per line, `-` to read
+  stdin:
+
+  ```sh
+  printf '0 tap a\n120 tap s\n240 down 400,300\n300 move 420,300\n360 up 420,300\n' \
+    | hush timeline Piano -
+  ```
+
+- **Recording a demo**: `hush record APP`, act, then `hush record APP --stop --out demo.mp4`.
+
+## Good habits
+
+- Read before acting, then trust the diffs. A second `observe` right after an `act` is wasted.
+- Batch. Five steps in one `act` is one round trip; five calls is five.
+- Prefer `set` over `type` for fields, `menu` over hunting for buttons, `script` for apps that
+  have a dictionary.
+- Use `wait` for slow things (a sheet, a download, a page load) instead of sleeping.
+- Never activate or raise an app to make something work. If Hush can't do it in the background, it
+  says so; report that.
+- If an app "isn't responding", it is stuck, not slow: tell the user rather than retrying in a
+  loop.
+
+## From MCP instead
+
+`hush mcp` serves the same commands as MCP tools (`apps`, `observe`, `act`, `timeline`, `script`,
+`see`, `record`) for harnesses that prefer it. The habits above apply unchanged.

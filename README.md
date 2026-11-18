@@ -97,6 +97,16 @@ hush act Notes "click b2" "type t1 \"Groceries\"" "key enter"
 hush see Notes --out notes.jpg
 ```
 
+## Agent skill
+
+`skills/hush/SKILL.md` teaches any agent harness to use the `hush` CLI directly: read a window, act
+in batches, trust the diffs. Copy the folder to wherever your agent loads skills, for example:
+
+```sh
+cp -r skills/hush ~/.claude/skills/   # Claude Code
+cp -r skills/hush ~/.codex/skills/    # Codex
+```
+
 ## Many agents at once
 
 Everything runs in one background Hush host per user, started by the first command and gone after
