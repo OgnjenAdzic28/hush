@@ -305,6 +305,30 @@ impl Platform for MacPlatform {
         capture::window(id, window.frame, region, max_width)
     }
 
+    fn launch(&self, app: &AppInfo) -> Result<()> {
+        // `open -g` has Launch Services start the app without activating
+        // it. Started as our child instead, an app can activate itself.
+        let mut open = std::process::Command::new("/usr/bin/open");
+        open.arg("-g");
+        match (&app.path, &app.id) {
+            (Some(path), _) => open.arg(path),
+            (None, Some(id)) => open.args(["-b", id]),
+            (None, None) => open.args(["-a", &app.name]),
+        };
+        let output = open
+            .output()
+            .map_err(|e| Error::Failed(format!("couldn't start {}: {e}", app.name)))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(Error::Failed(format!(
+                "couldn't start {}: {}",
+                app.name,
+                String::from_utf8_lossy(&output.stderr).trim()
+            )))
+        }
+    }
+
     fn press_menu(&self, app: &AppInfo, path: &[String]) -> Result<()> {
         let app_element = Self::app_element(app)?;
         let acting = self.acting_on(app);

@@ -88,6 +88,14 @@ pub trait Platform {
         ))
     }
 
+    /// Starts an installed app in the background: it opens behind the
+    /// user's front app and doesn't take focus.
+    fn launch(&self, _app: &AppInfo) -> Result<()> {
+        Err(Error::Unsupported(
+            "this platform can't start apps yet".into(),
+        ))
+    }
+
     /// Presses a menu bar command (`["File", "New"]`) of an app that has no
     /// window to act in, as `Op::Menu` does for one that has.
     fn press_menu(&self, _app: &AppInfo, _path: &[String]) -> Result<()> {
@@ -157,6 +165,9 @@ impl<P: Platform> Platform for std::sync::Arc<P> {
     }
     fn press_menu(&self, app: &AppInfo, path: &[String]) -> Result<()> {
         (**self).press_menu(app, path)
+    }
+    fn launch(&self, app: &AppInfo) -> Result<()> {
+        (**self).launch(app)
     }
     fn play(&self, app: &AppInfo, window: &WindowInfo, events: &[Timed]) -> Result<Played> {
         (**self).play(app, window, events)
