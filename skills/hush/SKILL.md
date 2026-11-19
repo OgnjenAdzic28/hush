@@ -1,6 +1,6 @@
 ---
 name: hush
-description: Use whenever a task needs a desktop app, not just a terminal or an API. That includes opening, reading, clicking, typing or picking menus in any app (an editor, a file manager, settings, a chat app, an IDE, a game), filling a form or checking a page in a real browser window, testing or demoing a desktop app, or when the user says "computer use" or asks you to do something on their computer while they keep working.
+description: Use for any task that needs a desktop app, such as opening one, reading its window, clicking, typing, picking menus or filling in forms in any app (Calculator, an editor, a file manager, settings, a chat app, an IDE, a game), checking a page in a real browser window, or testing and demoing a desktop app. Also use it when the user says "computer use" or asks for something done on their computer. Load it before deciding an app task would take over the screen, since Hush works in the background while the user keeps working.
 ---
 
 # Hush: computer use for agents
@@ -16,17 +16,22 @@ macOS today, with Windows and Linux next.
 hush apps            # running apps; fails if hush is missing or lacks permission
 ```
 
-If `hush` isn't on PATH, build it (`cargo build --release` in the repo, binary at
-`target/release/hush`). If a command says it lacks Accessibility or Screen Recording, ask the user
-to grant it to the app running you, in System Settings > Privacy & Security. Don't try to work
-around it.
+If `hush` isn't on PATH, ask the user to install it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh
+```
+
+If a command says it lacks Accessibility or Screen Recording, ask the user to grant it to the app
+running you, in System Settings > Privacy & Security. If it says it is inside a sandbox, ask the
+user to run `hush setup` or let `hush` run outside your sandbox. Don't try to work around either.
 
 ## The loop
 
-1. **Find the app.** `hush apps notes`. Use the name it prints. If it isn't running, start it
-   in the background with `open -g -a "Notes"` (plain `open` brings it to the front).
+1. **Find the app.** `hush apps notes`. Use the name it prints.
 2. **Read it.** `hush observe Notes`. One line per element, each with a ref (`b3` button, `t1`
-   text field, `r4` row...):
+   text field, `r4` row...). If the app isn't running, this starts it in the background first;
+   don't use `open`, which can bring it to the front.
 
    ```text
    # Notes · window "Notes" 1100x700 · focus t2
@@ -40,8 +45,12 @@ around it.
    waits for the app to settle, and the batch stops at the first failure:
 
    ```sh
-   hush act Notes "click b1" "type t2 \"Call the dentist\"" "key cmd+s"
+   hush act Notes 'click b1' 'type t2 "Call the dentist"' 'key cmd+s'
    ```
+
+   Put each step in single quotes and text inside it in double quotes, as above. Escaped quotes
+   (`"type t2 \"Hi\""`) make some harnesses, Codex among them, run the command in their sandbox,
+   where Hush can't work.
 
    The reply is only what changed (`+` added, `-` removed, `~` changed), so read it instead of
    observing again.
@@ -97,6 +106,9 @@ session, so refs from one command work in the next.
 - Prefer `set` over `type` for fields, `menu` over hunting for buttons, `script` for apps that
   have a dictionary.
 - Use `wait` for slow things (a sheet, a download, a page load) instead of sleeping.
+- Some commands only work on the app in front, so in the background they say "disabled right now"
+  (TextEdit's Format > Bold, say). Use the app's AppleScript for those when it has one:
+  `set font of paragraph 1 of text of front document to "Helvetica-Bold"`.
 - Never activate or raise an app to make something work. If Hush can't do it in the background, it
   says so; report that.
 - If an app "isn't responding", it is stuck, not slow: tell the user rather than retrying in a

@@ -1,0 +1,56 @@
+name: Release
+
+# Builds one universal macOS binary. A pushed tag (v0.1.0) publishes it as a
+# GitHub release, which install.sh downloads; pull requests that touch the
+# packaging build it without publishing.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "install.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p hush --target aarch64-apple-darwin
+      - run: cargo build --release --locked -p hush --target x86_64-apple-darwin
+      - name: Package
+        run: |
+          mkdir dist
+          lipo -create -output dist/hush \
+            target/aarch64-apple-darwin/release/hush \
+            target/x86_64-apple-darwin/release/hush
+          # lipo drops the linker's ad-hoc signature, and Apple silicon won't
+          # run an unsigned binary.
+          codesign --force --sign - dist/hush
+          dist/hush --version
+          tar -czf hush-macos.tar.gz -C dist hush
+          shasum -a 256 hush-macos.tar.gz > hush-macos.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hush-macos
+          path: hush-macos.tar.gz*
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="v$(dist/hush --version | cut -d' ' -f2)"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME doesn't match the binary's $version" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" hush-macos.tar.gz hush-macos.tar.gz.sha256 \
+            --title "Hush $GITHUB_REF_NAME" --generate-notes
