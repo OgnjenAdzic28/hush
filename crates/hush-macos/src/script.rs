@@ -73,10 +73,33 @@ fn run(compiled: &mut HashMap<String, Retained<NSAppleScript>>, source: &str) ->
                 message(error)
             )));
         };
-        Ok(result
-            .stringValue()
-            .map(|s| s.to_string())
-            .unwrap_or_default())
+        Ok(text(&result))
+    }
+}
+
+/// typeAEList, a list result such as `name of every window`.
+const LIST: u32 = u32::from_be_bytes(*b"list");
+/// typeNull, what a script that returns nothing gives back.
+const NULL: u32 = u32::from_be_bytes(*b"null");
+
+/// A result as osascript prints it: lists flattened and joined with ", ".
+fn text(result: &NSAppleEventDescriptor) -> String {
+    // SAFETY: `descriptorType` takes no arguments and returns a FourCharCode.
+    // (The generated binding needs a Core Services feature Hush doesn't use.)
+    let kind: u32 = unsafe { msg_send![result, descriptorType] };
+    if kind == LIST {
+        return (1..=result.numberOfItems())
+            .filter_map(|i| result.descriptorAtIndex(i))
+            .map(|item| text(&item))
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
+    match result.stringValue() {
+        Some(value) => value.to_string(),
+        None if kind == NULL => String::new(),
+        None => {
+            "(a result that isn't text; add `as text`, or ask for one of its properties)".into()
+        }
     }
 }
 
