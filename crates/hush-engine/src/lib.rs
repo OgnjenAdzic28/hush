@@ -84,8 +84,19 @@ impl<P: Platform> Engine<P> {
     }
 
     /// The outline of a window the first time, then only what changed.
+    /// An installed app that isn't running, named exactly, is started in
+    /// the background first.
     pub fn observe(&mut self, app: &str, options: ObserveOptions<'_>) -> Result<String> {
-        let (app, window) = self.target(app, options.window)?;
+        let started = self.start_if_needed(app)?;
+        let note = started.map(|app| format!("# started {} in the background\n", app.name));
+        let (app, window) = match (self.target(app, options.window), &note) {
+            // Started, but no window yet (some apps open none): say so, so
+            // the agent can open one (menu File > New).
+            (Err(Error::NotFound(message)), Some(note)) => {
+                return Ok(format!("{note}# {message}\n"));
+            }
+            (target, _) => target?,
+        };
         let snapshot = self.platform.read(&app, &window)?;
         let (mirror, first_look) = match self.mirrors.entry(key(&app, &window)) {
             Entry::Occupied(entry) => {
@@ -118,7 +129,7 @@ impl<P: Platform> Engine<P> {
         if options.focus.is_none() {
             mirror.mark_seen();
         }
-        Ok(text)
+        Ok(note.unwrap_or_default() + &text)
     }
 
     /// Every menu command of the app with its shortcut, one line per menu.
