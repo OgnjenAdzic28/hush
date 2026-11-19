@@ -11,6 +11,7 @@ mod cli;
 mod daemon;
 mod host;
 mod platform;
+mod setup;
 mod signals;
 
 use std::io::{self, Write};
@@ -22,6 +23,7 @@ const USAGE: &str = "\
 hush: background computer use for any agent
 
 usage:
+  hush setup [--skills-dir DIR]             check permissions, install the skill for your agents
   hush mcp                                  serve MCP over stdio
   hush daemon                               the per-user host every command uses (started for you)
   hush apps [QUERY]                         running apps, or apps matching QUERY
@@ -44,6 +46,26 @@ fn main() -> ExitCode {
             hush_core::timeline::SYNTAX
         );
         return ExitCode::SUCCESS;
+    }
+    if args[0] == "-V" || args[0] == "--version" {
+        println!("hush {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+    if args[0] == "setup" {
+        return match setup::run(&args[1..]) {
+            Ok((text, ready)) => {
+                print!("{text}");
+                if ready {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
+            }
+            Err(message) => {
+                eprintln!("hush: {message}");
+                ExitCode::FAILURE
+            }
+        };
     }
     if matches!(args[0].as_str(), "mcp" | "daemon") {
         // Before any thread starts, so every thread inherits the mask.
