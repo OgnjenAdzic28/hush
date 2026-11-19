@@ -1,6 +1,6 @@
 ---
 name: hush
-description: Use whenever a task needs a desktop app, not just a terminal or an API. That includes opening, reading, clicking, typing or picking menus in any app (an editor, a file manager, settings, a chat app, an IDE, a game), filling a form or checking a page in a real browser window, testing or demoing a desktop app, or when the user says "computer use" or asks you to do something on their computer while they keep working.
+description: Use for any task that needs a desktop app, such as opening one, reading its window, clicking, typing, picking menus or filling in forms in any app (Calculator, an editor, a file manager, settings, a chat app, an IDE, a game), checking a page in a real browser window, or testing and demoing a desktop app. Also use it when the user says "computer use" or asks for something done on their computer. Load it before deciding an app task would take over the screen, since Hush works in the background while the user keeps working.
 ---
 
 # Hush: computer use for agents
@@ -17,16 +17,21 @@ hush apps            # running apps; fails if hush is missing or lacks permissio
 ```
 
 If `hush` isn't on PATH, ask the user to install it:
-`curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh`. If a command says it lacks Accessibility or Screen Recording, ask the user
-to grant it to the app running you, in System Settings > Privacy & Security. Don't try to work
-around it.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh
+```
+
+If a command says it lacks Accessibility or Screen Recording, ask the user to grant it to the app
+running you, in System Settings > Privacy & Security. If it says it is inside a sandbox, ask the
+user to run `hush setup` or let `hush` run outside your sandbox. Don't try to work around either.
 
 ## The loop
 
-1. **Find the app.** `hush apps notes`. Use the name it prints. If it isn't running, start it
-   in the background with `open -g -a "Notes"` (plain `open` brings it to the front).
+1. **Find the app.** `hush apps notes`. Use the name it prints.
 2. **Read it.** `hush observe Notes`. One line per element, each with a ref (`b3` button, `t1`
-   text field, `r4` row...):
+   text field, `r4` row...). If the app isn't running, this starts it in the background first;
+   don't use `open`, which can bring it to the front.
 
    ```text
    # Notes · window "Notes" 1100x700 · focus t2

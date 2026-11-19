@@ -87,7 +87,8 @@ curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh 
 
 That's it. The installer puts `hush` in `~/.local/bin` and runs `hush setup`, which asks macOS for
 **Accessibility** and **Screen Recording** for your terminal and installs the Hush skill for
-Claude Code and Codex. Then ask your agent to do something in an app.
+Claude Code and Codex (plus a rule that lets Codex run `hush` outside its sandbox). Then ask your
+agent to do something in an app.
 
 Needs macOS 15 or later. Run `hush setup` again any time to check permissions or update the skill.
 
