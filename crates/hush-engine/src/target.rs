@@ -41,7 +41,7 @@ impl<P: Platform> Engine<P> {
         Ok((app, chosen))
     }
 
-    fn find_app(&self, query: &str) -> Result<AppInfo> {
+    pub(crate) fn find_app(&self, query: &str) -> Result<AppInfo> {
         let query = query.trim();
         let candidates = self.platform.apps(Some(query))?;
         let pid: Option<u32> = query.parse().ok();
