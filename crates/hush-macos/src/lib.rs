@@ -51,7 +51,7 @@ mod windows;
 #[cfg(target_os = "macos")]
 pub use ax::Element;
 #[cfg(target_os = "macos")]
-pub use permissions::{Permissions, host_app, permissions};
+pub use permissions::{Permissions, host_app, permissions, sandboxed};
 #[cfg(target_os = "macos")]
 pub use platform::MacPlatform;
 #[cfg(target_os = "macos")]

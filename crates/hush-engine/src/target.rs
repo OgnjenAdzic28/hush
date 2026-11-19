@@ -1,8 +1,18 @@
 //! Finding the app and window a call is about.
 
+use std::thread;
+use std::time::{Duration, Instant};
+
 use hush_core::{AppInfo, Error, Platform, Result, WindowInfo};
 
 use crate::Engine;
+
+/// How long a started app may take to open its first window.
+const START_LIMIT: Duration = Duration::from_secs(10);
+
+/// How often a starting app is checked; Hush can't watch an app for events
+/// before it is running.
+const START_POLL: Duration = Duration::from_millis(50);
 
 impl<P: Platform> Engine<P> {
     /// `app` is a name, part of a name, a bundle id or a pid. Running apps
@@ -41,7 +51,34 @@ impl<P: Platform> Engine<P> {
         Ok((app, chosen))
     }
 
-    fn find_app(&self, query: &str) -> Result<AppInfo> {
+    /// Starts the installed app named exactly `query` when it isn't
+    /// running, and waits for it to open a window (or for the limit).
+    /// Returns the app it started, if any.
+    pub(crate) fn start_if_needed(&self, query: &str) -> Result<Option<AppInfo>> {
+        if self.find_app(query).is_ok() {
+            return Ok(None);
+        }
+        let wanted = query.trim().to_lowercase();
+        let Some(app) = self.platform.apps(Some(query))?.into_iter().find(|app| {
+            app.pid.is_none()
+                && (app.name.to_lowercase() == wanted || app.id.as_deref() == Some(query.trim()))
+        }) else {
+            return Ok(None);
+        };
+        self.platform.launch(&app)?;
+        let deadline = Instant::now() + START_LIMIT;
+        while Instant::now() < deadline {
+            if let Ok(running) = self.find_app(query)
+                && !self.platform.windows(&running)?.is_empty()
+            {
+                break;
+            }
+            thread::sleep(START_POLL);
+        }
+        Ok(Some(app))
+    }
+
+    pub(crate) fn find_app(&self, query: &str) -> Result<AppInfo> {
         let query = query.trim();
         let candidates = self.platform.apps(Some(query))?;
         let pid: Option<u32> = query.parse().ok();
@@ -64,9 +101,8 @@ impl<P: Platform> Engine<P> {
         match best {
             Some(app) if app.pid.is_some() => Ok(app),
             Some(app) => Err(Error::NotFound(format!(
-                "{} is installed but not running{}",
-                app.name,
-                app.path.map(|p| format!(" ({p})")).unwrap_or_default()
+                "{} isn't running; observe {} starts it in the background",
+                app.name, app.name
             ))),
             None => Err(Error::NotFound(format!(
                 "no running app matches \"{query}\"; try apps"

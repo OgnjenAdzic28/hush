@@ -11,6 +11,23 @@ unsafe extern "C" {
     fn CGRequestScreenCaptureAccess() -> bool;
 }
 
+// libsystem_sandbox, part of libSystem.
+unsafe extern "C" {
+    fn sandbox_check(
+        pid: libc::pid_t,
+        operation: *const libc::c_char,
+        kind: libc::c_int,
+    ) -> libc::c_int;
+}
+
+/// True when this process runs in a sandbox (a coding agent's, say). A
+/// sandbox hides Accessibility and Screen Recording even when they are on.
+pub fn sandboxed() -> bool {
+    // SAFETY: a null operation with SANDBOX_FILTER_NONE (0) only asks
+    // whether the process is sandboxed at all.
+    unsafe { sandbox_check(libc::getpid(), std::ptr::null(), 0) != 0 }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Permissions {
     pub accessibility: bool,

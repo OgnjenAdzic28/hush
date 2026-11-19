@@ -38,6 +38,10 @@ struct World {
     /// Choosing an option leaves the popup's menu open until Escape.
     menu_sticks: bool,
     closed: bool,
+    /// The app has no windows until File > New opens one.
+    windowless: bool,
+    /// The app is installed but not running until it is launched.
+    stopped: bool,
     ops: Vec<String>,
     activity: Activity,
 }
@@ -119,11 +123,36 @@ impl Platform for Fake {
     type Handle = H;
 
     fn apps(&self, _query: Option<&str>) -> Result<Vec<AppInfo>> {
-        Ok(vec![app()])
+        let mut app = app();
+        if self.world.borrow().stopped {
+            app.pid = None;
+        }
+        Ok(vec![app])
+    }
+
+    fn launch(&self, _app: &AppInfo) -> Result<()> {
+        self.world.borrow_mut().stopped = false;
+        self.changed("Launch".into());
+        Ok(())
     }
 
     fn windows(&self, _app: &AppInfo) -> Result<Vec<WindowInfo>> {
+        if self.world.borrow().windowless {
+            return Ok(Vec::new());
+        }
         Ok(vec![window()])
+    }
+
+    fn press_menu(&self, _app: &AppInfo, path: &[String]) -> Result<()> {
+        if path != ["File", "New"] {
+            return Err(Error::NotFound(format!(
+                "no menu item {}",
+                path.join(" > ")
+            )));
+        }
+        self.world.borrow_mut().windowless = false;
+        self.changed(format!("PressMenu({})", path.join(" > ")));
+        Ok(())
     }
 
     fn read(&self, app: &AppInfo, window: &WindowInfo) -> Result<Snapshot<H>> {
@@ -409,4 +438,79 @@ fn drag_plays_a_press_glide_and_release_between_the_two_elements() {
     // Every element of the fake sits at 10,10 sized 100x20: its center is 60,20.
     assert!(play.contains("PointerDown { x: 60.0, y: 20.0"), "{play}");
     assert!(play.contains("PointerUp { x: 300.0, y: 200.0"), "{play}");
+}
+
+#[test]
+fn a_menu_step_works_on_an_app_with_no_windows() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().windowless = true;
+    let report = engine
+        .act("Editor", None, &steps(&["menu File > New"]))
+        .unwrap();
+    assert!(report.starts_with("# 1/1 steps · "), "{report}");
+    assert!(report.contains("window \"Doc\""), "{report}");
+    assert_eq!(engine.platform().ops(), ["PressMenu(File > New)"]);
+}
+
+#[test]
+fn other_steps_still_need_a_window() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().windowless = true;
+    let error = engine
+        .act("Editor", None, &steps(&["menu File > New", "click b1"]))
+        .unwrap_err();
+    assert!(error.to_string().contains("no open windows"), "{error}");
+    assert!(engine.platform().ops().is_empty());
+}
+
+#[test]
+fn a_menu_that_opens_nothing_says_so() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().windowless = true;
+    let report = engine
+        .act("Editor", None, &steps(&["menu Edit > Nothing"]))
+        .unwrap();
+    assert!(report.starts_with("# 0/1 steps · "), "{report}");
+    assert!(report.contains("stopped at step 1"), "{report}");
+    assert!(
+        report.contains("Editor still has no open windows"),
+        "{report}"
+    );
+}
+
+#[test]
+fn observe_starts_an_installed_app_named_exactly() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().stopped = true;
+    let text = engine.observe("editor", ObserveOptions::default()).unwrap();
+    assert!(
+        text.starts_with("# started Editor in the background\n# Editor"),
+        "{text}"
+    );
+    assert_eq!(engine.platform().ops(), ["Launch"]);
+}
+
+#[test]
+fn a_partial_name_never_starts_an_app() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().stopped = true;
+    let error = engine
+        .observe("Edit", ObserveOptions::default())
+        .unwrap_err();
+    assert!(error.to_string().contains("isn't running"), "{error}");
+    assert!(engine.platform().ops().is_empty());
+}
+
+#[test]
+fn act_doesnt_start_apps() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().stopped = true;
+    let error = engine
+        .act("Editor", None, &steps(&["click b1"]))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("observe Editor starts it"),
+        "{error}"
+    );
+    assert!(engine.platform().ops().is_empty());
 }
