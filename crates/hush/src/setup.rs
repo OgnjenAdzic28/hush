@@ -1,6 +1,10 @@
 //! `hush setup`: checks the permissions Hush needs and installs the Hush
 //! skill for the agent harnesses on this machine, so an agent can use Hush
 //! right after install. Safe to run again: it updates what it installed.
+//!
+//! The skill goes to `~/.agents/skills`, the shared folder most agents read
+//! (Codex, Cursor, Amp, Cline and others), and to Claude Code's own folder,
+//! because Claude Code reads only that one.
 
 use std::fs;
 use std::io;
@@ -43,35 +47,34 @@ pub(crate) fn run(args: &[String]) -> Result<(String, bool), String> {
     let mut out = format!("Hush {}\n\n", env!("CARGO_PKG_VERSION"));
     let ready = permissions(&mut out);
 
-    let targets = harness_skill_dirs(&extra);
-    if targets.is_empty() {
-        line(
-            &mut out,
-            '-',
-            "Skill",
-            "no Claude Code or Codex found; for another harness: hush setup --skills-dir DIR",
-        );
-    }
-    for (harness, dir) in &targets {
+    for (harness, dir) in skill_dirs(&extra) {
         let shown = tilde(&dir.join("hush"));
         report(
             &mut out,
             &format!("Skill for {harness}"),
             &shown,
-            install_skill(dir),
+            install_skill(&dir),
         );
-        if harness == "Codex"
-            && let Some(home) = dir.parent()
-        {
-            let rule = home.join("rules").join("hush.rules");
-            let shown = tilde(&rule);
-            report(
+    }
+    if let Some(codex) = codex_home() {
+        // Older versions put the skill here; Codex now reads it from
+        // ~/.agents/skills, and two copies would show up twice.
+        if remove_old_skill(&codex.join("skills")) {
+            line(
                 &mut out,
-                "Codex sandbox rule",
-                &shown,
-                write_file(&rule, CODEX_RULE),
+                '✓',
+                "Old Codex skill",
+                &format!("{} removed", tilde(&codex.join("skills").join("hush"))),
             );
         }
+        let rule = codex.join("rules").join("hush.rules");
+        let shown = tilde(&rule);
+        report(
+            &mut out,
+            "Codex sandbox rule",
+            &shown,
+            write_file(&rule, CODEX_RULE),
+        );
     }
     line(
         &mut out,
@@ -143,24 +146,51 @@ fn permissions(out: &mut String) -> bool {
     false
 }
 
-/// The skills directory of each harness installed for this user, then any
-/// the user named.
-fn harness_skill_dirs(extra: &[PathBuf]) -> Vec<(String, PathBuf)> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let config = |var: &str, default: &str| {
-        std::env::var_os(var)
-            .map(PathBuf::from)
-            .or_else(|| home.as_ref().map(|h| h.join(default)))
-    };
-    let mut dirs: Vec<(String, PathBuf)> = [
-        ("Claude Code", config("CLAUDE_CONFIG_DIR", ".claude")),
-        ("Codex", config("CODEX_HOME", ".codex")),
-    ]
-    .into_iter()
-    .filter_map(|(name, dir)| Some((name.to_owned(), dir.filter(|d| d.is_dir())?.join("skills"))))
-    .collect();
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+/// A harness's config folder, from its environment variable or the default
+/// under the home folder, if it exists.
+fn config_dir(var: &str, default: &str) -> Option<PathBuf> {
+    std::env::var_os(var)
+        .map(PathBuf::from)
+        .or_else(|| home().map(|h| h.join(default)))
+        .filter(|d| d.is_dir())
+}
+
+fn codex_home() -> Option<PathBuf> {
+    config_dir("CODEX_HOME", ".codex")
+}
+
+/// Where the skill goes: Claude Code's folder if it is installed, the shared
+/// agents folder always, then any folder the user named.
+fn skill_dirs(extra: &[PathBuf]) -> Vec<(String, PathBuf)> {
+    let mut dirs = Vec::new();
+    if let Some(claude) = config_dir("CLAUDE_CONFIG_DIR", ".claude") {
+        dirs.push(("Claude Code".to_owned(), claude.join("skills")));
+    }
+    if let Some(home) = home() {
+        dirs.push((
+            "other agents".to_owned(),
+            home.join(".agents").join("skills"),
+        ));
+    }
     dirs.extend(extra.iter().map(|d| ("your harness".to_owned(), d.clone())));
     dirs
+}
+
+/// Removes a Hush skill an older setup copied into `skills_dir`. Leaves
+/// links and anything that isn't Hush's skill alone.
+fn remove_old_skill(skills_dir: &Path) -> bool {
+    let dir = skills_dir.join("hush");
+    if fs::read_link(&dir).is_ok() {
+        return false;
+    }
+    match fs::read_to_string(dir.join("SKILL.md")) {
+        Ok(text) if text.starts_with("---\nname: hush\n") => fs::remove_dir_all(&dir).is_ok(),
+        _ => false,
+    }
 }
 
 fn install_skill(skills_dir: &Path) -> io::Result<Installed> {
@@ -251,6 +281,20 @@ mod tests {
             fs::read_to_string(checkout.join("SKILL.md")).unwrap(),
             "dev copy"
         );
+        fs::remove_dir_all(&skills).unwrap();
+    }
+
+    #[test]
+    fn an_old_copied_skill_is_removed_but_nothing_else() {
+        let skills = scratch("old");
+        install_skill(&skills).unwrap();
+        assert!(remove_old_skill(&skills));
+        assert!(!skills.join("hush").exists());
+
+        fs::create_dir_all(skills.join("hush")).unwrap();
+        fs::write(skills.join("hush/SKILL.md"), "someone else's").unwrap();
+        assert!(!remove_old_skill(&skills));
+        assert!(skills.join("hush/SKILL.md").exists());
         fs::remove_dir_all(&skills).unwrap();
     }
 
