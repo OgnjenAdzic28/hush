@@ -23,7 +23,8 @@ around it.
 
 ## The loop
 
-1. **Find the app.** `hush apps notes`. Use the name it prints.
+1. **Find the app.** `hush apps notes`. Use the name it prints. If it isn't running, start it
+   in the background with `open -g -a "Notes"` (plain `open` brings it to the front).
 2. **Read it.** `hush observe Notes`. One line per element, each with a ref (`b3` button, `t1`
    text field, `r4` row...):
 

@@ -20,6 +20,8 @@ mod lane;
 #[cfg(target_os = "macos")]
 mod menu;
 #[cfg(target_os = "macos")]
+mod permissions;
+#[cfg(target_os = "macos")]
 mod platform;
 #[cfg(target_os = "macos")]
 mod play;
@@ -48,6 +50,8 @@ mod windows;
 
 #[cfg(target_os = "macos")]
 pub use ax::Element;
+#[cfg(target_os = "macos")]
+pub use permissions::{Permissions, host_app, permissions};
 #[cfg(target_os = "macos")]
 pub use platform::MacPlatform;
 #[cfg(target_os = "macos")]
