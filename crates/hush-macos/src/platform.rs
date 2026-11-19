@@ -21,6 +21,10 @@ use crate::{act, apps, capture, cf, menu, play, read, windows};
 /// fails a step instead of the whole session.
 const AX_TIMEOUT_SECONDS: f32 = 1.5;
 
+/// How long a just-launched app may take to start answering Accessibility.
+/// Calculator and TextEdit answer about 0.3 s after `open -g` returns.
+const STARTING_LIMIT: Duration = Duration::from_secs(10);
+
 /// One platform serves every session in the process, each on its own
 /// thread, so its state sits behind locks held only for map lookups.
 #[derive(Debug)]
@@ -45,6 +49,26 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// True once the app answers. A hung app fails only after the whole
+/// timeout; one that fails at once is still starting up (just launched), so
+/// that one is asked again until it answers or `STARTING_LIMIT` passes.
+fn answers_once_started(app: &Element) -> bool {
+    let deadline = Instant::now() + STARTING_LIMIT;
+    let hung = Duration::from_secs_f32(AX_TIMEOUT_SECONDS / 2.0);
+    loop {
+        let asked = Instant::now();
+        if app.responding() {
+            return true;
+        }
+        if asked.elapsed() >= hung || Instant::now() >= deadline {
+            return false;
+        }
+        // An app that is starting has nothing to wait on yet: no
+        // notification fires when it begins answering, so ask again soon.
+        std::thread::sleep(Duration::from_millis(50));
+    }
 }
 
 fn not_responding(app: &AppInfo) -> Error {
@@ -198,7 +222,7 @@ impl Platform for MacPlatform {
         // one quick read (well under a millisecond for a live app) fails it
         // in a single timeout with the real reason.
         let app_element = Self::app_element(app)?;
-        if !app_element.responding() {
+        if !answers_once_started(&app_element) {
             return Err(not_responding(app));
         }
         let listed = windows::list(&app_element, pid, created, &mut known);
