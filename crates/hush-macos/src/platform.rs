@@ -297,6 +297,13 @@ impl Platform for MacPlatform {
         capture::window(id, window.frame, region, max_width)
     }
 
+    fn press_menu(&self, app: &AppInfo, path: &[String]) -> Result<()> {
+        let app_element = Self::app_element(app)?;
+        let acting = self.acting_on(app);
+        let _turn = lock(&acting);
+        menu::press_path(&app_element, path)
+    }
+
     fn menus(&self, app: &AppInfo) -> Result<Vec<MenuEntry>> {
         menu::catalog(&Self::app_element(app)?)
     }

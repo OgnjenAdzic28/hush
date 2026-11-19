@@ -47,6 +47,12 @@ impl<P: Platform> Engine<P> {
             return Err(Error::Failed("act needs at least one step".into()));
         }
 
+        if window.is_none() && parsed.iter().all(|s| matches!(s, Step::Menu { .. })) {
+            let found = self.find_app(app)?;
+            if self.platform.windows(&found)?.is_empty() {
+                return self.menus_without_window(&found, &parsed, steps);
+            }
+        }
         let (app, window) = self.target(app, window)?;
         let key = key(&app, &window);
         if let Entry::Vacant(entry) = self.mirrors.entry(key) {
