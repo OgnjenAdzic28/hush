@@ -16,8 +16,8 @@ macOS today, with Windows and Linux next.
 hush apps            # running apps; fails if hush is missing or lacks permission
 ```
 
-If `hush` isn't on PATH, build it (`cargo build --release` in the repo, binary at
-`target/release/hush`). If a command says it lacks Accessibility or Screen Recording, ask the user
+If `hush` isn't on PATH, ask the user to install it:
+`curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh`. If a command says it lacks Accessibility or Screen Recording, ask the user
 to grant it to the app running you, in System Settings > Privacy & Security. Don't try to work
 around it.
 

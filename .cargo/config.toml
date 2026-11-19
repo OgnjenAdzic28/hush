@@ -1,0 +1,5 @@
+# On Intel Macs the linker pulls in libswiftCoreMedia (through AVFoundation)
+# without saying where it lives, so the binary fails to start. macOS ships
+# the Swift libraries in /usr/lib/swift.
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-Wl,-rpath,/usr/lib/swift"]

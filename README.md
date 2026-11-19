@@ -79,37 +79,33 @@ Timeline events, one per line: `MS down KEY`, `MS up KEY`, `MS tap KEY [HOLD]`, 
 `MS move X,Y`, `MS up X,Y`, `MS tap X,Y [HOLD]`. Hush plays them on a real-time thread, under a
 millisecond off schedule at the median.
 
-## Setup
-
-macOS 15 or later and the Rust toolchain (`rustup` installs the pinned version):
+## Install
 
 ```sh
-cargo build --release
-# the binary is target/release/hush
+curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh
 ```
 
-Give the app that runs Hush (your terminal or agent) **Accessibility**, and **Screen Recording**
-for `see`, in System Settings > Privacy & Security.
+That's it. The installer puts `hush` in `~/.local/bin` and runs `hush setup`, which asks macOS for
+**Accessibility** and **Screen Recording** for your terminal and installs the Hush skill for
+Claude Code and Codex. Then ask your agent to do something in an app.
 
-**As a skill** (any harness that loads skills):
+Needs macOS 15 or later. Run `hush setup` again any time to check permissions or update the skill.
 
-```sh
-cp -r skills/hush ~/.claude/skills/   # Claude Code
-cp -r skills/hush ~/.codex/skills/    # Codex
-```
-
-**As an MCP server**:
+**Another harness**: `hush setup --skills-dir <its skills folder>`, or use the MCP server:
 
 ```sh
-claude mcp add hush -- /path/to/hush mcp
+claude mcp add hush -- hush mcp
 ```
 
 ```toml
 # ~/.codex/config.toml
 [mcp_servers.hush]
-command = "/path/to/hush"
+command = "hush"
 args = ["mcp"]
 ```
+
+**From source**: `cargo install --git https://github.com/OgnjenAdzic28/hush hush`, with Rust 1.100
+or later (`rustup update`).
 
 **From a shell**:
 
