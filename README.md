@@ -113,7 +113,7 @@ or later (`rustup update`).
 ```sh
 hush apps
 hush observe Notes
-hush act Notes "click b2" "type t1 \"Groceries\"" "key enter"
+hush act Notes 'click b2' 'type t1 "Groceries"' 'key enter'
 hush see Notes --out notes.jpg
 ```
 
@@ -142,7 +142,7 @@ name tag. The cursor lives only in the video, and the pacing is real.
 
 ```sh
 hush record Notes
-hush act Notes "click b2" "type t1 \"Groceries\""
+hush act Notes 'click b2' 'type t1 "Groceries"'
 hush record Notes --stop --label Claude --out demo.mp4
 ```
 

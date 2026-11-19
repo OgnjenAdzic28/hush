@@ -45,8 +45,12 @@ user to run `hush setup` or let `hush` run outside your sandbox. Don't try to wo
    waits for the app to settle, and the batch stops at the first failure:
 
    ```sh
-   hush act Notes "click b1" "type t2 \"Call the dentist\"" "key cmd+s"
+   hush act Notes 'click b1' 'type t2 "Call the dentist"' 'key cmd+s'
    ```
+
+   Put each step in single quotes and text inside it in double quotes, as above. Escaped quotes
+   (`"type t2 \"Hi\""`) make some harnesses, Codex among them, run the command in their sandbox,
+   where Hush can't work.
 
    The reply is only what changed (`+` added, `-` removed, `~` changed), so read it instead of
    observing again.
@@ -102,6 +106,9 @@ session, so refs from one command work in the next.
 - Prefer `set` over `type` for fields, `menu` over hunting for buttons, `script` for apps that
   have a dictionary.
 - Use `wait` for slow things (a sheet, a download, a page load) instead of sleeping.
+- Some commands only work on the app in front, so in the background they say "disabled right now"
+  (TextEdit's Format > Bold, say). Use the app's AppleScript for those when it has one:
+  `set font of paragraph 1 of text of front document to "Helvetica-Bold"`.
 - Never activate or raise an app to make something work. If Hush can't do it in the background, it
   says so; report that.
 - If an app "isn't responding", it is stuck, not slow: tell the user rather than retrying in a
