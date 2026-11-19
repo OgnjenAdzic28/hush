@@ -2,16 +2,16 @@
 
 **The fastest computer use for AI agents.**
 
-Hush lets any agent see and drive the apps on your Mac, in the background, while you keep working.
+Hush lets any agent see and drive the apps on your computer, in the background, while you keep working.
 Read a window, click, type, read it again: **178 ms**. The next fastest tool takes 653 ms.
 
 That's fast enough to win one-minute bullet against a 2200 chess.com bot, to play the third
 movement of the Moonlight Sonata at full tempo with every note on time, and to run ten agents on ten
-apps at once on one Mac, all without anything coming to the front.
+apps at once on one machine, all without anything coming to the front.
 
 ## How it compares
 
-Same window, same Mac, one round of read, click, type, read
+Same window, same machine, one round of read, click, type, read
 ([details](docs/comparison.md)):
 
 | Tool | Round | Works hidden | Works on another Space | Tool list (MCP) |
@@ -122,7 +122,7 @@ hush see Notes --out notes.jpg
 
 ## Many agents at once
 
-One Hush host serves every agent on your Mac. It starts with the first command and goes away after
+One Hush host serves every agent on your machine. It starts with the first command and goes away after
 ten idle minutes. Each agent gets its own session with its own refs and diffs. Agents on different
 apps run in parallel; two agents on the same app take turns, so their clicks and keys never
 interleave.

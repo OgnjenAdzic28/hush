@@ -1,13 +1,14 @@
 ---
 name: hush
-description: Use whenever a task needs a Mac app, not just a terminal or an API. That includes opening, reading, clicking, typing or picking menus in Notes, Finder, Xcode, System Settings, Messages, a game or any other app, filling a form or checking a page in a real browser window, testing or demoing a desktop app, or when the user says "computer use" or asks you to do something on their Mac while they keep working.
+description: Use whenever a task needs a desktop app, not just a terminal or an API. That includes opening, reading, clicking, typing or picking menus in any app (an editor, a file manager, settings, a chat app, an IDE, a game), filling a form or checking a page in a real browser window, testing or demoing a desktop app, or when the user says "computer use" or asks you to do something on their computer while they keep working.
 ---
 
 # Hush: computer use for agents
 
 Hush reads an app's window as text and acts on it in the background. The user keeps working in
 front; nothing comes to the front, the pointer doesn't move, the clipboard isn't touched. Every
-command answers as soon as the app has settled, so there is nothing to sleep for.
+command answers as soon as the app has settled, so there is nothing to sleep for. Hush runs on
+macOS today, with Windows and Linux next.
 
 ## Check once
 
