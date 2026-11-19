@@ -82,6 +82,14 @@ impl MacPlatform {
     /// Fails with a permission error, naming the setting, when this process
     /// isn't allowed to use Accessibility.
     pub fn new() -> Result<MacPlatform> {
+        if !ax::trusted() && crate::permissions::sandboxed() {
+            return Err(Error::Permission(
+                "Hush is running inside a sandbox, which hides Accessibility. Run hush outside it: \
+                 in Codex, `hush setup` adds a rule that lets hush commands out of the sandbox; \
+                 elsewhere, allow hush to run unsandboxed."
+                    .into(),
+            ));
+        }
         if !ax::trusted() {
             return Err(Error::Permission(
                 "Hush needs Accessibility access. Turn it on for the app running Hush (your terminal \

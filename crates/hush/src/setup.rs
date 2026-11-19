@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 /// agents without the repository.
 const SKILL: &str = include_str!("../../../skills/hush/SKILL.md");
 
+/// Codex runs shell commands in a sandbox that hides Accessibility, so hush
+/// fails there even when it is allowed. This rule runs hush commands outside
+/// the sandbox without asking.
+const CODEX_RULE: &str = "prefix_rule(pattern=[\"hush\"], decision=\"allow\")\n";
+
 pub(crate) const USAGE: &str = "hush setup [--skills-dir DIR]...";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,21 +53,24 @@ pub(crate) fn run(args: &[String]) -> Result<(String, bool), String> {
         );
     }
     for (harness, dir) in &targets {
-        let label = format!("Skill for {harness}");
         let shown = tilde(&dir.join("hush"));
-        match install_skill(dir) {
-            Ok(Installed::New) => line(&mut out, '✓', &label, &shown),
-            Ok(Installed::Updated) => line(&mut out, '✓', &label, &format!("{shown} (updated)")),
-            Ok(Installed::UpToDate) => {
-                line(&mut out, '✓', &label, &format!("{shown} (up to date)"))
-            }
-            Ok(Installed::Linked(to)) => line(
+        report(
+            &mut out,
+            &format!("Skill for {harness}"),
+            &shown,
+            install_skill(dir),
+        );
+        if harness == "Codex"
+            && let Some(home) = dir.parent()
+        {
+            let rule = home.join("rules").join("hush.rules");
+            let shown = tilde(&rule);
+            report(
                 &mut out,
-                '✓',
-                &label,
-                &format!("{shown} (links to {}, left as is)", tilde(&to)),
-            ),
-            Err(error) => line(&mut out, '✗', &label, &format!("{shown}: {error}")),
+                "Codex sandbox rule",
+                &shown,
+                write_file(&rule, CODEX_RULE),
+            );
         }
     }
     line(
@@ -85,6 +93,16 @@ fn line(out: &mut String, mark: char, label: &str, detail: &str) {
 
 #[cfg(target_os = "macos")]
 fn permissions(out: &mut String) -> bool {
+    if hush_macos::sandboxed() {
+        line(
+            out,
+            '✗',
+            "Sandbox",
+            "this is running inside a sandbox, which hides Accessibility; run hush setup from \
+             your own terminal",
+        );
+        return false;
+    }
     let granted = hush_macos::permissions(true);
     let app = hush_macos::host_app().unwrap_or_else(|| "the app you ran this from".into());
     let pane = "System Settings > Privacy & Security";
@@ -150,15 +168,36 @@ fn install_skill(skills_dir: &Path) -> io::Result<Installed> {
     if let Ok(target) = fs::read_link(&dir) {
         return Ok(Installed::Linked(target));
     }
-    let file = dir.join("SKILL.md");
-    let state = match fs::read_to_string(&file) {
-        Ok(current) if current == SKILL => return Ok(Installed::UpToDate),
+    write_file(&dir.join("SKILL.md"), SKILL)
+}
+
+/// Writes `contents` to `file` unless it already holds them.
+fn write_file(file: &Path, contents: &str) -> io::Result<Installed> {
+    let state = match fs::read_to_string(file) {
+        Ok(current) if current == contents => return Ok(Installed::UpToDate),
         Ok(_) => Installed::Updated,
         Err(_) => Installed::New,
     };
-    fs::create_dir_all(&dir)?;
-    fs::write(&file, SKILL)?;
+    if let Some(dir) = file.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(file, contents)?;
     Ok(state)
+}
+
+fn report(out: &mut String, label: &str, shown: &str, result: io::Result<Installed>) {
+    match result {
+        Ok(Installed::New) => line(out, '✓', label, shown),
+        Ok(Installed::Updated) => line(out, '✓', label, &format!("{shown} (updated)")),
+        Ok(Installed::UpToDate) => line(out, '✓', label, &format!("{shown} (up to date)")),
+        Ok(Installed::Linked(to)) => line(
+            out,
+            '✓',
+            label,
+            &format!("{shown} (links to {}, left as is)", tilde(&to)),
+        ),
+        Err(error) => line(out, '✗', label, &format!("{shown}: {error}")),
+    }
 }
 
 fn tilde(path: &Path) -> String {
