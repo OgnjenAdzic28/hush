@@ -107,7 +107,7 @@ args = ["mcp"]
 **From source**: `cargo install --git https://github.com/OgnjenAdzic28/hush hush`, with Rust 1.100
 or later (`rustup update`).
 
-**From a shell**:
+**Try it yourself**:
 
 ```sh
 hush apps
