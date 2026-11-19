@@ -1,6 +1,6 @@
 ---
 name: hush
-description: Drive Mac apps in the background with the hush CLI. Read a window as a short outline, then click, type, pick menus and wait in one batch, without taking the user's focus, pointer or clipboard. Use when a task needs a desktop app on macOS (Notes, Finder, Xcode, a game, any app), or a browser page that only a real window can reach.
+description: Use whenever a task needs a Mac app, not just a terminal or an API. That includes opening, reading, clicking, typing or picking menus in Notes, Finder, Xcode, System Settings, Messages, a game or any other app, filling a form or checking a page in a real browser window, testing or demoing a desktop app, or when the user says "computer use" or asks you to do something on their Mac while they keep working.
 ---
 
 # Hush: computer use for agents
