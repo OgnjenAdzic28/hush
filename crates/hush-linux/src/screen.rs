@@ -1,9 +1,17 @@
 //! The lane's X server: finding an app's window on it and capturing it.
 //! Only ever connects to Hush's own display, never the user's.
+//!
+//! The lane has no window manager, so apps' windows pile up at its top left.
+//! Capture reads each window's own pixels through the Composite extension,
+//! which keeps every window drawn off screen, so a window under another
+//! still pictures as itself.
 
 use hush_core::{Image, Rect};
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, ImageFormat, MapState, Window};
+use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
+use x11rb::protocol::xproto::{
+    AtomEnum, ConnectionExt as _, Drawable, ImageFormat, MapState, Window,
+};
 use x11rb::rust_connection::RustConnection;
 
 use crate::lane::Lane;
@@ -39,6 +47,18 @@ impl Screen {
             .reply()
             .map_err(x)?
             .atom;
+        // Automatic redirection keeps showing windows as before; it lasts
+        // while this connection does, and other hosts may ask for it too.
+        connection
+            .composite_query_version(0, 4)
+            .map_err(x)?
+            .reply()
+            .map_err(x)?;
+        connection
+            .composite_redirect_subwindows(root, Redirect::AUTOMATIC)
+            .map_err(x)?
+            .check()
+            .map_err(x)?;
         Ok(Screen {
             connection,
             root,
@@ -144,20 +164,16 @@ impl Screen {
         let area = clip(region.unwrap_or(full), full)
             .ok_or_else(|| "that region is outside the window".to_owned())?;
         let (width, height) = (area.w as u16, area.h as u16);
-        let image = self
-            .connection
-            .get_image(
-                ImageFormat::Z_PIXMAP,
-                window,
-                area.x as i16,
-                area.y as i16,
-                width,
-                height,
-                !0,
-            )
+        let c = &self.connection;
+        let pixmap = c.generate_id().map_err(x)?;
+        c.composite_name_window_pixmap(window, pixmap)
             .map_err(x)?
-            .reply()
+            .check()
             .map_err(x)?;
+        let image = self.read(pixmap, area, width, height);
+        // Freed whatever the read did; a failure here only leaks an id.
+        let _ = c.free_pixmap(pixmap);
+        let image = image?;
         let (w, h) = (usize::from(width), usize::from(height));
         if image.data.len() < w * h * 4 {
             return Err(x(format!(
@@ -167,6 +183,28 @@ impl Screen {
             )));
         }
         Ok((bgrx_to_rgb(&image.data, w * h), w, h))
+    }
+
+    fn read(
+        &self,
+        drawable: Drawable,
+        area: Rect,
+        width: u16,
+        height: u16,
+    ) -> X<x11rb::protocol::xproto::GetImageReply> {
+        self.connection
+            .get_image(
+                ImageFormat::Z_PIXMAP,
+                drawable,
+                area.x as i16,
+                area.y as i16,
+                width,
+                height,
+                !0,
+            )
+            .map_err(x)?
+            .reply()
+            .map_err(x)
     }
 }
 

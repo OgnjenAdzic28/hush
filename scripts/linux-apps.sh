@@ -112,20 +112,18 @@ check_writer() {
   return 1
 }
 check_qt() {
+  # Watch both buses from before the app starts, to see whether Qt asks for
+  # the accessibility bus and registers on it.
+  a11y=$(dbus-send --session --print-reply=literal --dest=org.a11y.Bus /org/a11y/bus org.a11y.Bus.GetAddress | tr -d ' ')
+  timeout 40 dbus-monitor --session >"$out/qt-session.log" 2>&1 &
+  timeout 40 dbus-monitor --address "$a11y" >"$out/qt-a11y.log" 2>&1 &
+  sleep 1 # Diagnostics only: let the monitors attach.
   typed FeatherPad 20 && pictured FeatherPad qt && return 0
-  # Why Qt didn't show up: what it says about accessibility on start.
-  pkill -x featherpad || true
-  display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
-  ldd "$(command -v featherpad)" | grep -i "qt.*gui" || true
-  timeout 10 dbus-monitor --session >"$out/qt-dbus.log" 2>&1 &
-  DISPLAY=:$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 QT_FORCE_STDERR_LOGGING=1 \
-    QT_LOGGING_RULES="qt.accessibility*=true;qt.qpa.*=true" timeout 8 featherpad >"$out/qt.log" 2>&1 &
-  sleep 5 # Diagnostics only: give it time to start and register.
-  python3 scripts/atspi-tree.py featherpad 3 || true
-  wait || true
-  grep -iv "xcb.*event\|qt.qpa.events" "$out/qt.log" | tail -40
-  echo "--- session bus calls about accessibility while it started:"
-  grep -iE "a11y|atspi|GetAddress|IsEnabled|ScreenReader" "$out/qt-dbus.log" | head -40
+  ps -eo pid,args | grep -i [f]eatherpad || true
+  echo "--- session bus, about accessibility:"
+  grep -iE "a11y|atspi|GetAddress|IsEnabled|ScreenReader" "$out/qt-session.log" | head -20
+  echo "--- accessibility bus, Qt's calls:"
+  grep -E "Embed|Registry|method call" "$out/qt-a11y.log" | grep -v "sender=:1.0 " | head -30
   return 1
 }
 check_qt2() { typed SpeedCrunch 20 && pictured SpeedCrunch qt2; }
@@ -145,6 +143,11 @@ check_firefox() {
 for app in "$@"; do
   run "$app"
 done
+# Calculator is under every app started after it now; it must still
+# picture as itself.
+if [[ " $* " == *" calculator "* ]]; then
+  h see Calculator --out "$out/calculator-under.jpg" || failed+=(under)
+fi
 h apps
 if h apps | grep -q "front"; then
   echo "FAIL an app on Hush's display is listed as the front app"
