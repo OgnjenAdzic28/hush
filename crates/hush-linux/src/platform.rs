@@ -11,6 +11,8 @@ use hush_core::{
 use zbus::block_on;
 
 use crate::bus::{Bus, Element};
+use crate::lane::Lane;
+use crate::screen::Screen;
 use crate::watch::Watch;
 use crate::{act, apps, installed, read};
 
@@ -22,10 +24,13 @@ pub struct LinuxPlatform {
     bus: Mutex<Option<Arc<Bus>>>,
     /// Each running app's accessibility root, by pid.
     roots: Mutex<HashMap<u32, Element>>,
-    /// Windows seen by `windows`, by id, for `read` and `perform`.
-    windows: Mutex<HashMap<u64, Element>>,
+    /// Windows seen by `windows`, by id, with their app's pid, for `read`,
+    /// `perform` and `capture`.
+    windows: Mutex<HashMap<u64, (Element, Option<u32>)>>,
     /// Started on the first `activity` call, then runs for good.
     watch: Mutex<Option<Arc<Watch>>>,
+    /// Hush's own display, once found or started, and a connection to it.
+    lane: Mutex<Option<(Lane, Arc<Screen>)>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -62,14 +67,40 @@ impl LinuxPlatform {
     }
 
     fn window_element(&self, app: &AppInfo, window: &WindowInfo) -> Result<Element> {
-        if let Some(element) = lock(&self.windows).get(&window.id) {
+        if let Some((element, _)) = lock(&self.windows).get(&window.id) {
             return Ok(element.clone());
         }
         self.windows(app)?;
         lock(&self.windows)
             .get(&window.id)
-            .cloned()
+            .map(|(element, _)| element.clone())
             .ok_or_else(|| Error::Stale(format!("window \"{}\" closed", window.title)))
+    }
+
+    /// The lane an earlier host or this one started, if it is up; with
+    /// `start`, one is started when none is.
+    fn lane(&self, start: bool) -> Result<Option<(Lane, Arc<Screen>)>> {
+        let mut known = lock(&self.lane);
+        if let Some(lane) = &*known {
+            return Ok(Some(lane.clone()));
+        }
+        let lane = match (Lane::running(), start) {
+            (Some(lane), _) => lane,
+            (None, true) => Lane::find_or_start().map_err(Error::Failed)?,
+            (None, false) => return Ok(None),
+        };
+        let screen = Arc::new(Screen::open(lane).map_err(Error::Failed)?);
+        *known = Some((lane, screen.clone()));
+        Ok(Some((lane, screen)))
+    }
+
+    /// Whether the app runs on Hush's display, where input and capture
+    /// can't reach the user.
+    fn in_lane(&self, pid: Option<u32>) -> bool {
+        match (pid, self.lane(false)) {
+            (Some(pid), Ok(Some((lane, _)))) => lane.holds(pid),
+            _ => false,
+        }
     }
 
     fn watch(&self, bus: &Bus) -> Result<Arc<Watch>> {
@@ -106,11 +137,9 @@ pub(crate) fn failed(error: zbus::Error) -> Error {
     }
 }
 
-fn not_yet<T>(what: &str) -> Result<T> {
-    Err(Error::Unsupported(format!(
-        "Hush on Linux can't {what} yet"
-    )))
-}
+/// Capturing is only done on Hush's display: on the user's it could show
+/// whatever covers the window, and on Wayland it isn't allowed at all.
+const CAPTURE_NEEDS_LANE: &str = "Hush only captures apps it started on its own display; quit the app and observe it again, and Hush starts it there";
 
 impl Platform for LinuxPlatform {
     type Handle = Element;
@@ -120,7 +149,14 @@ impl Platform for LinuxPlatform {
         let mut found = self.list(&bus)?;
         if let Some(query) = query {
             let wanted = query.to_lowercase();
-            found.retain(|app| app.name.to_lowercase().contains(&wanted));
+            // By the name people see, the desktop id, or the command.
+            found.retain(|app| {
+                let command = app.path.as_deref().and_then(|p| p.rsplit('/').next());
+                [Some(app.name.as_str()), app.id.as_deref(), command]
+                    .into_iter()
+                    .flatten()
+                    .any(|n| n.to_lowercase().contains(&wanted))
+            });
             for installed in installed::matching(query) {
                 if !found.iter().any(|app| app.name == installed.name) {
                     found.push(installed);
@@ -138,7 +174,7 @@ impl Platform for LinuxPlatform {
         Ok(windows
             .into_iter()
             .map(|window| {
-                known.insert(window.info.id, window.element);
+                known.insert(window.info.id, (window.element, app.pid));
                 window.info
             })
             .collect())
@@ -163,13 +199,32 @@ impl Platform for LinuxPlatform {
     fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
         let bus = self.bus()?;
         let element = self.window_element(app, window)?;
-        // No app runs on Hush's own display yet, so every app is on the
-        // user's, where only accessibility actions are allowed.
-        block_on(act::perform(&bus, &element, false, op))
+        let in_lane = self.in_lane(app.pid);
+        block_on(act::perform(&bus, &element, in_lane, op))
     }
 
-    fn capture(&self, _window: &WindowInfo, _region: Option<Rect>, _max: u32) -> Result<Image> {
-        not_yet("capture them")
+    fn capture(&self, window: &WindowInfo, region: Option<Rect>, max: u32) -> Result<Image> {
+        let pid = lock(&self.windows)
+            .get(&window.id)
+            .and_then(|(_, pid)| *pid);
+        let Some(pid) = pid else {
+            return Err(Error::Stale(format!("window \"{}\" closed", window.title)));
+        };
+        let Some((_, screen)) = self.lane(false)?.filter(|(lane, _)| lane.holds(pid)) else {
+            return Err(Error::Unsupported(CAPTURE_NEEDS_LANE.into()));
+        };
+        let (found, frame) = screen.window_of(pid, window.frame).map_err(Error::Failed)?;
+        let size = (frame.w as u32, frame.h as u32);
+        screen
+            .capture(found, size, region, max)
+            .map_err(Error::Failed)
+    }
+
+    fn launch(&self, app: &AppInfo) -> Result<()> {
+        let (lane, _) = self
+            .lane(true)?
+            .ok_or_else(|| Error::Failed("Hush's display didn't start".into()))?;
+        lane.launch(app).map_err(Error::Failed)
     }
 
     fn script(&self, _app: &AppInfo, _source: &str, _language: ScriptLanguage) -> Result<String> {

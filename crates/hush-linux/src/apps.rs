@@ -7,6 +7,7 @@ use futures_util::future::join_all;
 use hush_core::{AppInfo, Role, WindowInfo};
 
 use crate::bus::{Bus, Coords, Element, Reply};
+use crate::installed;
 use crate::roles::{self, Mapped, StateSet, state};
 
 /// A running app: its accessibility root and what Hush reports about it.
@@ -35,16 +36,21 @@ async fn describe(bus: &Bus, root: Element) -> Option<Running> {
         return None;
     }
     let pid = pid.ok();
-    let name = name.unwrap_or_default();
+    let path = pid.and_then(executable);
+    // The name a person knows the app by is its menu entry's ("Calculator"),
+    // which toolkits often don't report ("gnome-calculator").
+    let entry = path.as_deref().and_then(installed::by_executable);
+    let reported = name.unwrap_or_default();
+    let name = match (&entry, reported.is_empty()) {
+        (Some(entry), _) => entry.name.clone(),
+        (None, false) => reported,
+        (None, true) => pid.and_then(command).unwrap_or_default(),
+    };
     let info = AppInfo {
-        name: if name.is_empty() {
-            pid.and_then(command).unwrap_or_default()
-        } else {
-            name
-        },
+        name,
         pid,
-        id: None,
-        path: pid.and_then(executable),
+        id: entry.and_then(|e| e.id),
+        path,
         frontmost: windows.iter().any(|w| w.states.has(state::ACTIVE)),
     };
     Some(Running { root, info })
