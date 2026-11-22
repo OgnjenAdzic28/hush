@@ -25,7 +25,11 @@ mod record;
 #[cfg(any(target_os = "linux", test))]
 mod roles;
 #[cfg(target_os = "linux")]
+pub mod runtime;
+#[cfg(target_os = "linux")]
 mod screen;
+#[cfg(target_os = "linux")]
+mod setup;
 #[cfg(target_os = "linux")]
 mod watch;
 
@@ -33,3 +37,5 @@ mod watch;
 pub use bus::Element;
 #[cfg(target_os = "linux")]
 pub use platform::LinuxPlatform;
+#[cfg(target_os = "linux")]
+pub use setup::{Readiness, readiness};

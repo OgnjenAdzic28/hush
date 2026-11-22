@@ -36,7 +36,7 @@ impl Lane {
 
     /// The lane an earlier Hush host left running, if it still answers.
     pub(crate) fn running() -> Option<Lane> {
-        let display: u32 = std::fs::read_to_string(state_file())
+        let display: u32 = std::fs::read_to_string(state_file()?)
             .ok()?
             .trim()
             .parse()
@@ -80,16 +80,27 @@ impl Lane {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        let state = state_file();
-        if let Some(dir) = state.parent() {
-            let _ = std::fs::create_dir_all(dir);
+        if let Some(state) = state_file() {
+            if let Some(dir) = state.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&state, display.to_string());
         }
-        let _ = std::fs::write(&state, display.to_string());
         Ok(lane)
     }
 
+    /// Whether the display is up and is this user's: an X server another
+    /// user started on that number must never get this user's apps.
     fn answers(self) -> bool {
-        socket(self.display).exists() && x11rb::connect(Some(&self.name())).is_ok()
+        use std::os::unix::fs::MetadataExt;
+        let ours = match (
+            std::fs::metadata(socket(self.display)),
+            crate::runtime::uid(),
+        ) {
+            (Ok(socket), Ok(uid)) => socket.uid() == uid,
+            _ => false,
+        };
+        ours && x11rb::connect(Some(&self.name())).is_ok()
     }
 
     /// Whether `pid` runs on this lane, from its environment.
@@ -137,7 +148,9 @@ impl Lane {
     /// machine shares the lane, and one host's keys must not land in the
     /// middle of another's drag.
     pub(crate) fn input_lock() -> std::io::Result<std::fs::File> {
-        let path = state_file().with_file_name("lane-input.lock");
+        let path = state_file()
+            .ok_or_else(|| std::io::Error::other("no private folder for Hush's input lock"))?
+            .with_file_name("lane-input.lock");
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -155,13 +168,10 @@ fn lock_file(display: u32) -> PathBuf {
     PathBuf::from(format!("/tmp/.X{display}-lock"))
 }
 
-/// Where the lane's display number is kept between hosts.
-fn state_file() -> PathBuf {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let user = std::env::var("USER").unwrap_or_else(|_| "user".into());
-            std::env::temp_dir().join(format!("hush-{user}"))
-        });
-    dir.join("hush").join("lane-display")
+/// Where the lane's display number is kept between hosts. `None` when the
+/// user has no private folder for it, and then no lane is remembered.
+fn state_file() -> Option<PathBuf> {
+    crate::runtime::dir()
+        .ok()
+        .map(|dir| dir.join("hush").join("lane-display"))
 }

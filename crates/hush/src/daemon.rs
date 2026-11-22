@@ -29,8 +29,23 @@ use crate::cli;
 /// How long a caller waits for a host it started to accept connections.
 const START_LIMIT: Duration = Duration::from_secs(3);
 
+#[cfg(not(target_os = "linux"))]
 pub(crate) fn socket() -> PathBuf {
     std::env::temp_dir().join("hush.sock")
+}
+
+/// `/tmp` is shared by every user on Linux, so the socket goes in the
+/// user's runtime folder (see `hush_linux::runtime`), or their home folder
+/// when there is no safe one.
+#[cfg(target_os = "linux")]
+pub(crate) fn socket() -> PathBuf {
+    hush_linux::runtime::dir()
+        .or_else(|_| {
+            let home = std::env::var_os("HOME").ok_or(io::ErrorKind::NotFound)?;
+            Ok::<_, io::Error>(PathBuf::from(home))
+        })
+        .map(|dir| dir.join("hush.sock"))
+        .unwrap_or_else(|_| PathBuf::from(".hush.sock"))
 }
 
 /// Identifies the binary: a host only serves callers built from the same

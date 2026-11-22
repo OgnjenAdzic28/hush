@@ -135,7 +135,49 @@ fn permissions(out: &mut String) -> bool {
     granted.accessibility
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+fn permissions(out: &mut String) -> bool {
+    let ready = hush_linux::readiness();
+    let accessible = match &ready.accessibility {
+        Ok(()) => {
+            line(
+                out,
+                '✓',
+                "Accessibility",
+                "on; apps opened before now may need a restart to be readable",
+            );
+            true
+        }
+        Err(problem) => {
+            line(out, '✗', "Accessibility", problem);
+            false
+        }
+    };
+    if ready.xvfb {
+        line(out, '✓', "Hush's display", "Xvfb is installed");
+    } else {
+        line(
+            out,
+            '✗',
+            "Hush's display",
+            "to start apps, see them and use keys and the pointer: install Xvfb \
+             (sudo apt install xvfb, or sudo dnf install xorg-x11-server-Xvfb)",
+        );
+    }
+    if ready.ffmpeg {
+        line(out, '✓', "Recording", "ffmpeg is installed");
+    } else {
+        line(
+            out,
+            '·',
+            "Recording",
+            "for record: install ffmpeg (sudo apt install ffmpeg)",
+        );
+    }
+    accessible && ready.xvfb
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn permissions(out: &mut String) -> bool {
     line(
         out,
