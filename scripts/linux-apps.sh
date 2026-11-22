@@ -34,7 +34,7 @@ shows() {
 # line, not only a note ("# no window yet").
 opened() {
   local app=$1 seconds=$2
-  "$hush" observe "$app" | tee "$out/$app-first.txt"
+  "$hush" observe "$app" | tee "$out/$app-first.txt" || return 1
   for _ in $(seq $((seconds * 5))); do
     if "$hush" observe "$app" --full >"$out/last.txt" 2>&1 && grep -qv '^#' "$out/last.txt"; then
       cat "$out/last.txt" | head -40
@@ -49,21 +49,21 @@ opened() {
 
 typed() {
   local app=$1 seconds=$2
-  opened "$app" "$seconds"
-  "$hush" act "$app" "type hello from hush"
-  shows "$app" "hello from hush" 10
+  opened "$app" "$seconds" &&
+    "$hush" act "$app" "type hello from hush" &&
+    shows "$app" "hello from hush" 10
 }
 
 pictured() {
   local app=$1 name=$2
-  "$hush" see "$app" --out "$out/$name.jpg"
-  test -s "$out/$name.jpg"
+  "$hush" see "$app" --out "$out/$name.jpg" && test -s "$out/$name.jpg"
 }
 
 run() {
   local name=$1
   local started=$SECONDS
   echo "::group::$name"
+  # errexit is off inside an if, so each check chains its steps with &&.
   if "check_$name"; then
     echo "::endgroup::"
     echo "ok   $name ($((SECONDS - started)) s)"
@@ -75,18 +75,17 @@ run() {
 }
 
 check_calculator() {
-  opened Calculator 20
-  "$hush" act Calculator "key 4" "key 2"
-  shows Calculator '\b42\b' 10
-  pictured Calculator calculator
+  opened Calculator 20 &&
+    "$hush" act Calculator "key 4" "key 2" &&
+    shows Calculator '\b42\b' 10 &&
+    pictured Calculator calculator
 }
 check_gtk3() { typed Mousepad 20 && pictured Mousepad gtk3; }
 check_gtk4() { typed "Text Editor" 20 && pictured "Text Editor" gtk4; }
 check_writer() { typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer; }
 check_qt() { typed FeatherPad 20 && pictured FeatherPad qt; }
 check_firefox() {
-  opened Firefox 60
-  pictured Firefox firefox
+  opened Firefox 60 && pictured Firefox firefox
 }
 
 for app in "$@"; do
