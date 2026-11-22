@@ -31,6 +31,7 @@ pub(crate) mod state {
     pub const SELECTED: u32 = 23;
     pub const SENSITIVE: u32 = 24;
     pub const SHOWING: u32 = 25;
+    pub const VISIBLE: u32 = 30;
     pub const INDETERMINATE: u32 = 32;
 }
 
