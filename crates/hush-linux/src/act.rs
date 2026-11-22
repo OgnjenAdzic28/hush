@@ -88,7 +88,16 @@ async fn act(bus: &Bus, element: &Element, wanted: &[&str]) -> Result<()> {
 
 async fn set_value(bus: &Bus, element: &Element, value: &str) -> Result<()> {
     match bus.set_text(element, value).await.map_err(refuse) {
-        Ok(done) => return refused(done, "change the text"),
+        Ok(done) => {
+            refused(done, "change the text")?;
+            // GTK leaves the caret at 0 after replacing the text; put it
+            // after the text, as typing there would, so a following `type`
+            // continues the text.
+            if let Ok(count) = bus.character_count(element).await {
+                let _ = bus.set_caret(element, count).await;
+            }
+            return Ok(());
+        }
         Err(Error::Unsupported(_)) => {}
         Err(e) => return Err(e),
     }

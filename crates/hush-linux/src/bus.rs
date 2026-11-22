@@ -243,6 +243,10 @@ impl Bus {
         Ok((caret >= 0).then_some(caret))
     }
 
+    pub(crate) async fn set_caret(&self, element: &Element, at: i32) -> Reply<bool> {
+        self.call(element, TEXT, "SetCaretOffset", &at).await
+    }
+
     pub(crate) async fn character_count(&self, element: &Element) -> Reply<i32> {
         i32::try_from(self.property(element, TEXT, "CharacterCount").await?)
             .map_err(zbus::Error::Variant)

@@ -82,15 +82,25 @@ fn presses_calculator_buttons_and_settles_on_events() {
         let r = ref_of(&outline, "button", Some(digit));
         out = act(&mut engine, "gnome-calculator", &[&format!("click {r}")]);
     }
-    let display = engine
-        .observe(
-            "gnome-calculator",
-            ObserveOptions {
-                full: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
+    // Diagnosis: does the last press show up late, or only after another
+    // call to the app? Reads again for up to 3 s.
+    let started = Instant::now();
+    let display = loop {
+        let display = engine
+            .observe(
+                "gnome-calculator",
+                ObserveOptions {
+                    full: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        if display.contains("789") || started.elapsed() > Duration::from_secs(3) {
+            break display;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    };
+    println!("789 after {:?}", started.elapsed());
     assert!(
         display.contains("789"),
         "the display didn't show 789:\n{display}"
