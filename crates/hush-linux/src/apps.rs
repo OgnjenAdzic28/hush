@@ -30,9 +30,6 @@ pub(crate) async fn running(bus: &Bus) -> Reply<Vec<Running>> {
 async fn describe(bus: &Bus, root: Element) -> Option<Running> {
     let (windows, pid, name) =
         futures_util::join!(windows(bus, &root), bus.pid(&root.bus), bus.name(&root));
-    if std::env::var_os("HUSH_ATSPI_DEBUG").is_some() {
-        eprintln!("DEBUG app {root:?} pid {pid:?} name {name:?} windows {:?}", windows.as_ref().map(|w| w.len()));
-    }
     let windows = windows.ok()?;
     if windows.is_empty() {
         return None;
@@ -63,7 +60,13 @@ pub(crate) struct Window {
 
 /// The app's windows that are on screen or minimized, active one first.
 pub(crate) async fn windows(bus: &Bus, root: &Element) -> Reply<Vec<Window>> {
-    let children = bus.children(root).await?;
+    let mut children = bus.children(root).await?;
+    // GTK 4 puts the app's own accessible between the root and its windows.
+    if let [only] = children.as_slice()
+        && bus.role(only).await.is_ok_and(|role| role == "application")
+    {
+        children = bus.children(&children[0]).await?;
+    }
     let read = join_all(children.into_iter().map(|element| window(bus, element))).await;
     let mut found: Vec<Window> = read.into_iter().flatten().collect();
     found.sort_by_key(|w| !w.info.main);
@@ -81,9 +84,6 @@ async fn window(bus: &Bus, element: Element) -> Option<Window> {
         bus.name(&element),
         bus.frame(&element, Coords::Screen),
     );
-    if std::env::var_os("HUSH_ATSPI_DEBUG").is_some() {
-        eprintln!("DEBUG child {element:?} states {states:?} role {role:?} title {title:?}");
-    }
     let states = states.ok()?;
     if !matches!(
         roles::map(&role.ok()?, states),

@@ -32,7 +32,6 @@ jobs:
       LIBGL_ALWAYS_SOFTWARE: "1"
       # Qt exposes its tree only when asked to, or when a screen reader runs.
       QT_LINUX_ACCESSIBILITY_ALWAYS_ON: "1"
-      HUSH_ATSPI_DEBUG: "1"
     steps:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain
@@ -43,6 +42,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             xvfb dbus dbus-x11 at-spi2-core \
             gtk-3-examples gnome-calculator featherpad libxcb-cursor0
+      - name: Diagnose Qt (temporary)
+        run: |
+          xvfb-run -a dbus-run-session -- bash -c '
+            dbus-send --session --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true
+            QT_DEBUG_PLUGINS=0 featherpad > /tmp/fp.log 2>&1 &
+            sleep 6
+            ps aux | grep -i [f]eather || echo "featherpad not running"
+            cat /tmp/fp.log | head -20
+            ldd $(which featherpad) | grep -i qt | head -5
+            busctl --user list 2>/dev/null | head -20' || true
       - run: cargo build --release -p hush-linux --tests
       - name: Read real apps
         run: xvfb-run -a dbus-run-session -- cargo test --release -p hush-linux -- --ignored --test-threads=1 --nocapture
