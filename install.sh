@@ -4,22 +4,34 @@
 #   curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh
 #
 # HUSH_INSTALL_DIR picks the folder (default ~/.local/bin). HUSH_DOWNLOAD_URL
-# points at another hush-macos.tar.gz, with its .sha256 next to it.
+# points at another build (hush-macos.tar.gz, hush-linux-x86_64.tar.gz or
+# hush-linux-aarch64.tar.gz), with its .sha256 next to it.
 set -eu
 
 repo="OgnjenAdzic28/hush"
 dir="${HUSH_INSTALL_DIR:-$HOME/.local/bin}"
-url="${HUSH_DOWNLOAD_URL:-https://github.com/$repo/releases/latest/download/hush-macos.tar.gz}"
 
 fail() {
 	echo "hush install: $1" >&2
 	exit 1
 }
 
-[ "$(uname -s)" = Darwin ] ||
-	fail "Hush runs on macOS for now. Windows and Linux are next: https://github.com/$repo/issues/30"
-major="$(sw_vers -productVersion | cut -d. -f1)"
-[ "$major" -ge 15 ] || fail "Hush needs macOS 15 or later (this Mac has $(sw_vers -productVersion))"
+case "$(uname -s)" in
+Darwin)
+	major="$(sw_vers -productVersion | cut -d. -f1)"
+	[ "$major" -ge 15 ] || fail "Hush needs macOS 15 or later (this Mac has $(sw_vers -productVersion))"
+	build="hush-macos"
+	;;
+Linux)
+	case "$(uname -m)" in
+	x86_64 | amd64) build="hush-linux-x86_64" ;;
+	aarch64 | arm64) build="hush-linux-aarch64" ;;
+	*) fail "there's no Hush build for $(uname -m) Linux yet" ;;
+	esac
+	;;
+*) fail "Hush runs on macOS and Linux for now. Windows is next: https://github.com/$repo/issues/133" ;;
+esac
+url="${HUSH_DOWNLOAD_URL:-https://github.com/$repo/releases/latest/download/$build.tar.gz}"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -34,7 +46,11 @@ fetch() {
 fetch "$url" "$tmp/hush.tar.gz" || fail "couldn't download $url"
 fetch "$url.sha256" "$tmp/hush.sha256" || fail "couldn't download $url.sha256"
 expected="$(cut -d' ' -f1 <"$tmp/hush.sha256")"
-actual="$(shasum -a 256 "$tmp/hush.tar.gz" | cut -d' ' -f1)"
+if command -v sha256sum >/dev/null 2>&1; then
+	actual="$(sha256sum "$tmp/hush.tar.gz" | cut -d' ' -f1)"
+else
+	actual="$(shasum -a 256 "$tmp/hush.tar.gz" | cut -d' ' -f1)"
+fi
 [ "$expected" = "$actual" ] || fail "the download doesn't match its checksum; try again"
 tar -xzf "$tmp/hush.tar.gz" -C "$tmp"
 
@@ -55,7 +71,10 @@ case ":$PATH:" in
 	line="export PATH=\"$shown:\$PATH\""
 	case "${SHELL:-}" in
 	*/zsh) rc="$HOME/.zshrc" ;;
-	*/bash) rc="$HOME/.bash_profile" ;;
+	*/bash)
+		# Terminals on macOS start login shells; on Linux they read .bashrc.
+		if [ "$build" = hush-macos ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi
+		;;
 	*) rc="" ;;
 	esac
 	if [ -n "$rc" ]; then

@@ -133,7 +133,15 @@ fn sets_and_types_text_and_toggles_a_checkbox() {
         "text wasn't set and typed"
     );
 
-    let checkbox = ref_of(&outline, "checkbox", None);
+    // A plain one: clicking the mixed checkbox toggles it underneath, but
+    // it still reads as mixed.
+    let checkbox = outline
+        .lines()
+        .map(str::trim)
+        .find(|l| l.contains(" checkbox ") && !l.contains("[disabled]") && !l.contains("= mixed"))
+        .and_then(|l| l.split(' ').next())
+        .unwrap_or_else(|| panic!("no plain checkbox in\n{outline}"))
+        .to_owned();
     let out = act(
         &mut engine,
         "gtk3-widget-factory",

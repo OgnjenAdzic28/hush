@@ -148,14 +148,22 @@ impl LinuxPlatform {
 
     fn list(&self, bus: &Bus) -> Result<Vec<AppInfo>> {
         let running = block_on(apps::running(bus)).map_err(failed)?;
+        let lane = self.lane(false).ok().flatten().map(|(lane, _)| lane);
         let mut roots = lock(&self.roots);
         roots.clear();
-        for app in &running {
+        let mut found = Vec::with_capacity(running.len());
+        for mut app in running {
             if let Some(pid) = app.info.pid {
                 roots.insert(pid, app.root.clone());
+                // Its window is active on Hush's display, which the user
+                // never sees: it isn't the user's front app.
+                if lane.is_some_and(|lane| lane.holds(pid)) {
+                    app.info.frontmost = false;
+                }
             }
+            found.push(app.info);
         }
-        Ok(running.into_iter().map(|app| app.info).collect())
+        Ok(found)
     }
 }
 

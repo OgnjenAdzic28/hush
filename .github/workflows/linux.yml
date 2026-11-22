@@ -44,6 +44,30 @@ jobs:
       - run: cargo build --release -p hush-linux --tests
       - name: Read real apps
         run: xvfb-run -a dbus-run-session -- cargo test --release -p hush-linux -- --ignored --test-threads=1 --nocapture
+      - run: cargo build --release -p hush
+      - name: The hush binary, end to end
+        # The commands an agent runs, through the per-user host they share.
+        run: |
+          xvfb-run -a dbus-run-session -- bash -euxo pipefail -c '
+            hush=target/release/hush
+            $hush setup --skills-dir "$RUNNER_TEMP/skills"
+            test -s "$RUNNER_TEMP/skills/hush/SKILL.md"
+            $hush observe Calculator | tee "$RUNNER_TEMP/observe.txt"
+            grep -q "started Calculator" "$RUNNER_TEMP/observe.txt"
+            $hush apps | grep Calculator
+            $hush act Calculator "key 4" "key 2"
+            # Calculator shows a result about 250 ms after the key.
+            for _ in $(seq 30); do
+              $hush observe Calculator --full | grep -q "\b42\b" && break
+              sleep 0.1
+            done
+            $hush observe Calculator --full | grep "\b42\b"
+            $hush see Calculator --out "$RUNNER_TEMP/see.jpg"
+            test -s "$RUNNER_TEMP/see.jpg"
+            if $hush apps | grep "Calculator.*front"; then exit 1; fi
+            pkill -x hush || true
+            pkill -x gnome-calculator || true
+          '
       - name: Keep the test recording, to look at the drawn cursor
         if: always()
         uses: actions/upload-artifact@v4
