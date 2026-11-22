@@ -46,6 +46,14 @@ impl Screen {
         })
     }
 
+    pub(crate) fn connection(&self) -> &RustConnection {
+        &self.connection
+    }
+
+    pub(crate) fn root(&self) -> Window {
+        self.root
+    }
+
     /// The shown top-level window of `pid` nearest `frame` (the window's
     /// frame as AT-SPI reports it, in lane coordinates). The lane has no
     /// window manager, so top-level windows are the root's children.

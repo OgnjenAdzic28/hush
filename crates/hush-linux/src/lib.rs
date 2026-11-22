@@ -9,6 +9,8 @@ mod apps;
 #[cfg(target_os = "linux")]
 mod bus;
 #[cfg(target_os = "linux")]
+mod input;
+#[cfg(target_os = "linux")]
 mod installed;
 #[cfg(target_os = "linux")]
 mod lane;
