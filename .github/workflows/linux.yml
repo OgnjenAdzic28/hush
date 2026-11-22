@@ -64,7 +64,7 @@ jobs:
             $hush observe Calculator --full | grep "\b42\b"
             $hush see Calculator --out "$RUNNER_TEMP/see.jpg"
             test -s "$RUNNER_TEMP/see.jpg"
-            ! $hush apps | grep "Calculator.*front"
+            if $hush apps | grep "Calculator.*front"; then exit 1; fi
             pkill -x hush || true
             pkill -x gnome-calculator || true
           '
