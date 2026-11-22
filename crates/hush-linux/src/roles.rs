@@ -182,12 +182,10 @@ pub(crate) fn map(atspi_role: u32, states: StateSet) -> Mapped {
 
 pub(crate) fn states(role: Role, set: StateSet) -> States {
     let mut states = States::default();
-    // GTK 3, Qt and browsers report "sensitive" and "enabled" together and
-    // drop both for a disabled control; GTK 4 only ever reports "sensitive".
-    states.set(
-        States::DISABLED,
-        !(set.has(state::ENABLED) || set.has(state::SENSITIVE)),
-    );
+    // "Sensitive" is the state every toolkit drops for a disabled control.
+    // "Enabled" isn't: GTK 3 keeps it on insensitive widgets, and GTK 4
+    // never reports it at all.
+    states.set(States::DISABLED, !set.has(state::SENSITIVE));
     states.set(States::FOCUSED, set.has(state::FOCUSED));
     states.set(States::SELECTED, set.has(state::SELECTED));
     states.set(States::EXPANDED, set.has(state::EXPANDED));
@@ -269,12 +267,13 @@ mod tests {
     }
 
     #[test]
-    fn disabled_only_without_enabled_and_sensitive() {
+    fn disabled_means_not_sensitive() {
         let gtk3 = set(&[state::ENABLED, state::SENSITIVE]);
         assert!(!states(Role::Button, gtk3).has(States::DISABLED));
         let gtk4 = set(&[state::SENSITIVE]);
         assert!(!states(Role::Button, gtk4).has(States::DISABLED));
-        assert!(states(Role::Button, set(&[state::SHOWING])).has(States::DISABLED));
+        let gtk3_insensitive = set(&[state::ENABLED]);
+        assert!(states(Role::Button, gtk3_insensitive).has(States::DISABLED));
     }
 
     #[test]
