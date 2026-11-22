@@ -11,6 +11,7 @@ on:
       - "Cargo.lock"
       - ".github/workflows/linux.yml"
       - "scripts/linux-apps.sh"
+      - "scripts/linux-desktop.sh"
   push:
     branches: [main]
     paths:
@@ -118,5 +119,29 @@ jobs:
         with:
           name: linux-app-pictures
           path: ${{ runner.temp }}/hush-apps
+          if-no-files-found: ignore
+          retention-days: 7
+
+  desktop:
+    # A real desktop: GNOME Shell on Wayland, headless, with the person's
+    # own Calculator open on it. Hush must read and click it through
+    # accessibility, refuse raw keys and pictures of it, and keep the apps
+    # it starts on its own display, off the desktop.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gnome-shell gnome-calculator gnome-text-editor xvfb at-spi2-core dbus-x11
+      - run: cargo build --release -p hush
+      - run: dbus-run-session -- scripts/linux-desktop.sh target/release/hush
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop
+          path: ${{ runner.temp }}/hush-desktop
           if-no-files-found: ignore
           retention-days: 7
