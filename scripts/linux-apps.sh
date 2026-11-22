@@ -5,7 +5,7 @@
 #
 #   xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush APP...
 #
-# APP is one of: calculator, gtk3, gtk4, writer, qt, firefox. When an app
+# APP is one of: calculator, gtk3, gtk4, writer, qt, firefox, chrome. When an app
 # leaves something out, scripts/atspi-tree.py prints what it reports.
 set -euo pipefail
 
@@ -123,6 +123,14 @@ check_firefox() {
     h act Firefox "key ctrl+l" "type data:text/html;charset=utf-8,<h1>café ✓</h1>" "key Return" &&
     shows Firefox 'heading "café ✓"' 20 &&
     pictured Firefox firefox
+}
+
+# Chromium's family, the same way: load a page and read its heading.
+check_chrome() {
+  opened "Google Chrome" 60 && pictured "Google Chrome" chrome-start || return 1
+  h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return" &&
+    shows "Google Chrome" 'heading "hello from hush ✓"' 20 &&
+    pictured "Google Chrome" chrome
 }
 
 for app in "$@"; do
