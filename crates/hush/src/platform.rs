@@ -28,7 +28,7 @@ pub(crate) struct Unsupported;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn unsupported<T>() -> hush_core::Result<T> {
     Err(Error::Unsupported(
-        "this platform isn't supported yet; Hush runs on macOS for now".into(),
+        "this platform isn't supported yet; Hush runs on macOS and Linux for now".into(),
     ))
 }
 

@@ -95,6 +95,10 @@ something in an app.
 
 Needs macOS 15 or later. Run `hush setup` again any time to check permissions or update the skill.
 
+On Linux the same command installs a static binary for x86_64 or arm64, and `hush setup` checks the
+accessibility bus, Xvfb and ffmpeg instead. Linux builds ship from the next release; until then,
+build from source.
+
 **Pick your agents**: install the skill with the [skills](https://skills.sh) CLI instead, which
 lets you choose from 70+ agents:
 
@@ -144,6 +148,9 @@ display nobody can see, parked off a corner of your main display where the point
 Windows there still render, take clicks and keys, and can be captured. When the host exits, apps in
 the lane are hidden first, so nothing ever lands on your screen.
 
+On Linux the lane is a hidden X server that Hush starts for itself. Every app an agent opens runs
+there from the start, whether your desktop is X11 or Wayland.
+
 ## Recording demos
 
 `record` films a window while Hush works in it, lane included, and draws an agent cursor into the
@@ -158,8 +165,18 @@ hush record Notes --stop --label Claude --out demo.mp4
 
 ## Platforms
 
-macOS today. The core, the engine and the MCP server are platform-neutral, so Windows and Linux are
-next.
+**macOS** 15 or later: everything above.
+
+**Linux**: Hush reads and drives apps through AT-SPI, the accessibility bus GTK, Qt, Firefox,
+Chromium and LibreOffice share. Apps an agent opens start on Hush's hidden display, where keys,
+clicks, drags, timelines, `see` and `record` all work and none of it can reach your screen. Apps
+you already had open take clicks, `set`, `type`, `select` and menus through accessibility, and
+nothing else, so an agent can never type into your window by mistake. `cmd+s` means Ctrl+S there.
+
+Measured on GitHub's Linux runners: observe reads GNOME Calculator's 98 elements in 24 ms, a click
+settles in 20 to 35 ms, and timeline events land 0.18 ms late at the median.
+
+**Windows** is next.
 
 ## Contributing
 

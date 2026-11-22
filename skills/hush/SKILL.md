@@ -8,7 +8,7 @@ description: Use for any task that needs a desktop app, such as opening one, rea
 Hush reads an app's window as text and acts on it in the background. The user keeps working in
 front; nothing comes to the front, the pointer doesn't move, the clipboard isn't touched. Every
 command answers as soon as the app has settled, so there is nothing to sleep for. Hush runs on
-macOS today, with Windows and Linux next.
+macOS and Linux, with Windows next.
 
 ## Check once
 
@@ -23,7 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh 
 ```
 
 If a command says it lacks Accessibility or Screen Recording, ask the user to grant it to the app
-running you, in System Settings > Privacy & Security. If it says it is inside a sandbox, ask the
+running you, in System Settings > Privacy & Security. On Linux, if it says Xvfb, ffmpeg or the
+accessibility bus is missing, ask the user to run `hush setup`, which says what to install. If it says it is inside a sandbox, ask the
 user to run `hush setup` or let `hush` run outside your sandbox. Don't try to work around either.
 
 ## The loop
@@ -82,6 +83,9 @@ session, so refs from one command work in the next.
 - **Scriptable apps** (Finder, Mail, Music, Safari, most Apple apps): write the whole script,
   `tell` included: `hush script Finder 'tell application "Finder" to get name of startup disk'`.
   One AppleScript line often replaces many clicks. `--js` for JXA.
+- **Linux**: open apps with `hush observe APP`, which starts them on Hush's hidden display. Keys,
+  pointer clicks, `see`, `timeline` and `record` only work on apps started that way. Apps the user
+  already had open take `click`, `set`, `type`, `select` and `menu` on refs. `script` is macOS only.
 - **Menus**: `hush observe Xcode --menus` lists every command with its shortcut.
 - **Big windows**: long parts are folded. Open one with `hush observe Mail --focus e7`.
 - **Pixels**: `hush see Preview --out shot.jpg` (or `--ref v2` for one element). Only for what the

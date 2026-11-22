@@ -6,7 +6,7 @@ Words used in the code and docs. Where the project stands and why: `docs/plannin
   Hush never calls a model itself.
 - **User**: the person at the machine. Hush must never disturb them: no focus change, no raised
   window, no pointer move, no clipboard use, no keystroke landing in their app.
-- **Platform**: one OS backend (`hush-macos`; Windows and Linux later). It implements the
+- **Platform**: one OS backend (`hush-macos`, `hush-linux`; Windows later). It implements the
   `Platform` trait from `hush-core` and is the only code that touches OS APIs.
 - **App**: a running process with windows, identified by pid.
 - **Window**: one top-level window of an app. Hush reads and acts on one window at a time.
