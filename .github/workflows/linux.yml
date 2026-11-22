@@ -104,14 +104,17 @@ jobs:
             xvfb dbus dbus-x11 at-spi2-core fontconfig fonts-dejavu-core \
             gnome-calculator mousepad gnome-text-editor \
             libreoffice-writer libreoffice-gtk3 featherpad \
-            firefox gdb python3-pyatspi x11-apps imagemagick
+            firefox gdb
       - name: Skip Firefox's first-run pages, as on a browser someone already uses
         run: |
           sudo install -d /etc/firefox/policies
           echo '{"policies":{"DontCheckDefaultBrowser":true,"OverrideFirstRunPage":"","OverridePostUpdatePage":"","UserMessaging":{"SkipOnboarding":true,"MoreFromMozilla":false}}}' \
             | sudo tee /etc/firefox/policies/policies.json
-      - name: Skip Chrome's first-run prompts (Chrome comes with the runner)
+      - name: Skip Chrome's first run, as on a browser someone already uses (Chrome comes with the runner)
         run: |
+          # Chrome's first run opens a terms dialog it doesn't expose to
+          # accessibility; this file says the first run happened.
+          mkdir -p ~/.config/google-chrome && touch ~/.config/google-chrome/"First Run"
           sudo install -d /etc/opt/chrome/policies/managed
           echo '{"DefaultBrowserSettingEnabled":false,"PromotionsEnabled":false,"MetricsReportingEnabled":false,"BrowserSignin":0}' \
             | sudo tee /etc/opt/chrome/policies/managed/hush.json
