@@ -20,6 +20,8 @@ pub(crate) mod state {
     pub const BUSY: u32 = 3;
     pub const CHECKED: u32 = 4;
     pub const EDITABLE: u32 = 7;
+    /// Not a sign of being usable (see `states`); tests use it to say so.
+    #[cfg(test)]
     pub const ENABLED: u32 = 8;
     pub const EXPANDED: u32 = 10;
     pub const FOCUSED: u32 = 12;
