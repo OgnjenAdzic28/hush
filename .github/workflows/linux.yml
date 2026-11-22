@@ -64,8 +64,9 @@ jobs:
             $hush observe Calculator --full | grep "\b42\b"
             $hush see Calculator --out "$RUNNER_TEMP/see.jpg"
             test -s "$RUNNER_TEMP/see.jpg"
-            pkill -f "hush daemon" || true
-            pkill gnome-calculator || true
+            ! $hush apps | grep "Calculator.*front"
+            pkill -x hush || true
+            pkill -x gnome-calculator || true
           '
       - name: Keep the test recording, to look at the drawn cursor
         if: always()
