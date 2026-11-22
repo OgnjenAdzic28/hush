@@ -5,7 +5,7 @@
 #
 #   xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush APP...
 #
-# APP is one of: calculator, gtk3, gtk4, writer, qt, firefox.
+# APP is one of: calculator, gtk3, gtk4, writer, qt, qt2, firefox.
 set -euo pipefail
 
 hush=$1
@@ -116,14 +116,16 @@ check_qt() {
   # Why Qt didn't show up: what it says about accessibility on start.
   pkill -x featherpad || true
   display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
-  DISPLAY=:$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 \
-    QT_LOGGING_RULES="qt.accessibility*=true" timeout 8 featherpad >"$out/qt.log" 2>&1 &
+  ldd "$(command -v featherpad)" | grep -i "qt.*gui" || true
+  DISPLAY=:$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 QT_FORCE_STDERR_LOGGING=1 \
+    QT_LOGGING_RULES="qt.accessibility*=true;qt.qpa.*=true" timeout 8 featherpad >"$out/qt.log" 2>&1 &
   sleep 5 # Diagnostics only: give it time to start and register.
   python3 scripts/atspi-tree.py featherpad 3 || true
   wait || true
-  tail -40 "$out/qt.log"
+  grep -iv "xcb.*event\|qt.qpa.events" "$out/qt.log" | tail -40
   return 1
 }
+check_qt2() { typed SpeedCrunch 20 && pictured SpeedCrunch qt2; }
 # Loads a page and reads its text back.
 check_firefox() {
   opened Firefox 60 && pictured Firefox firefox-start || return 1

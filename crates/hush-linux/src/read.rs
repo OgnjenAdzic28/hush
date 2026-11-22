@@ -110,7 +110,8 @@ async fn read_one(
         bus.frame(element, Coords::Window),
     );
     let set = set?;
-    let role = match roles::map(role_name?, set) {
+    let atspi_role = role_name?;
+    let role = match roles::map(atspi_role, set) {
         Mapped::Role(role) => role,
         Mapped::Skip if !root => return Ok(None),
         Mapped::Skip => Role::Window,
@@ -119,7 +120,7 @@ async fn read_one(
     let showing = root || set.has(state::SHOWING);
     // The second round: whatever the first round says is worth asking for.
     let (text, number, description, children) = futures_util::join!(
-        OptionFuture::from(roles::has_text_value(role).then(|| bus.text(element))),
+        OptionFuture::from(roles::has_text_value(role, set).then(|| bus.text(element))),
         OptionFuture::from(roles::has_number_value(role).then(|| bus.number(element))),
         OptionFuture::from(name.trim().is_empty().then(|| bus.description(element))),
         OptionFuture::from(showing.then(|| bus.children(element))),
@@ -133,7 +134,7 @@ async fn read_one(
         Some(description) => description.unwrap_or_default(),
         None => name,
     };
-    let mut states = roles::states(role, set);
+    let mut states = roles::states(role, atspi_role, set);
     states.set(States::OFFSCREEN, !showing);
     let node = Node {
         handle: element.clone(),

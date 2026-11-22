@@ -120,7 +120,11 @@ pub(crate) mod role {
     pub const LINK: u32 = 88;
     pub const TABLE_ROW: u32 = 90;
     pub const TREE_ITEM: u32 = 91;
+    pub const DOCUMENT_SPREADSHEET: u32 = 92;
+    pub const DOCUMENT_PRESENTATION: u32 = 93;
+    pub const DOCUMENT_TEXT: u32 = 94;
     pub const DOCUMENT_WEB: u32 = 95;
+    pub const DOCUMENT_EMAIL: u32 = 96;
     pub const LIST_BOX: u32 = 98;
     pub const GROUPING: u32 = 99;
     pub const IMAGE_MAP: u32 = 100;
@@ -151,6 +155,9 @@ pub(crate) fn map(atspi_role: u32, states: StateSet) -> Mapped {
                 TextField
             }
         }
+        // A word processor's paragraphs (LibreOffice Writer) are where its
+        // text is typed.
+        PARAGRAPH if states.has(state::EDITABLE) => TextArea,
         TEXT | LABEL | STATIC | CAPTION | PARAGRAPH | ACCELERATOR_LABEL => Text,
         COMBO_BOX => ComboBox,
         SPIN_BUTTON => Stepper,
@@ -169,6 +176,7 @@ pub(crate) fn map(atspi_role: u32, states: StateSet) -> Mapped {
         COLUMN_HEADER | TABLE_COLUMN_HEADER => Column,
         SCROLL_PANE | VIEWPORT => ScrollArea,
         DOCUMENT_WEB | DOCUMENT_FRAME | HTML_CONTAINER => WebArea,
+        DOCUMENT_TEXT | DOCUMENT_SPREADSHEET | DOCUMENT_PRESENTATION | DOCUMENT_EMAIL => Group,
         HEADING => Heading,
         IMAGE | ICON | IMAGE_MAP | CANVAS => Image,
         PROGRESS_BAR | LEVEL_BAR => Progress,
@@ -182,12 +190,21 @@ pub(crate) fn map(atspi_role: u32, states: StateSet) -> Mapped {
     Mapped::Role(mapped)
 }
 
-pub(crate) fn states(role: Role, set: StateSet) -> States {
+pub(crate) fn states(role: Role, atspi_role: u32, set: StateSet) -> States {
     let mut states = States::default();
     // "Sensitive" is the state every toolkit drops for a disabled control.
     // "Enabled" isn't: GTK 3 keeps it on insensitive widgets, and GTK 4
-    // never reports it at all.
-    states.set(States::DISABLED, !set.has(state::SENSITIVE));
+    // never reports it at all. A document and its paragraphs are content,
+    // not controls, and LibreOffice marks them neither.
+    let content = matches!(
+        atspi_role,
+        role::PARAGRAPH
+            | role::DOCUMENT_TEXT
+            | role::DOCUMENT_SPREADSHEET
+            | role::DOCUMENT_PRESENTATION
+            | role::DOCUMENT_EMAIL
+    );
+    states.set(States::DISABLED, !content && !set.has(state::SENSITIVE));
     states.set(States::FOCUSED, set.has(state::FOCUSED));
     states.set(States::SELECTED, set.has(state::SELECTED));
     states.set(States::EXPANDED, set.has(state::EXPANDED));
@@ -223,9 +240,10 @@ pub(crate) fn actions(role: Role) -> Actions {
 }
 
 /// Roles whose value is their text contents (the `Text` interface).
-pub(crate) fn has_text_value(role: Role) -> bool {
-    // A combo box's text lives in its entry child, not on the combo itself.
-    role.is_text_input() && role != Role::ComboBox
+pub(crate) fn has_text_value(role: Role, set: StateSet) -> bool {
+    // A GTK combo box's text lives in its entry child; an editable combo
+    // (Firefox's address bar) holds its own.
+    role.is_text_input() && (role != Role::ComboBox || set.has(state::EDITABLE))
 }
 
 /// Roles whose value is a number (the `Value` interface).
@@ -271,17 +289,29 @@ mod tests {
     #[test]
     fn disabled_means_not_sensitive() {
         let gtk3 = set(&[state::ENABLED, state::SENSITIVE]);
-        assert!(!states(Role::Button, gtk3).has(States::DISABLED));
+        assert!(!states(Role::Button, role::PUSH_BUTTON, gtk3).has(States::DISABLED));
         let gtk4 = set(&[state::SENSITIVE]);
-        assert!(!states(Role::Button, gtk4).has(States::DISABLED));
+        assert!(!states(Role::Button, role::PUSH_BUTTON, gtk4).has(States::DISABLED));
         let gtk3_insensitive = set(&[state::ENABLED]);
-        assert!(states(Role::Button, gtk3_insensitive).has(States::DISABLED));
+        assert!(states(Role::Button, role::PUSH_BUTTON, gtk3_insensitive).has(States::DISABLED));
+    }
+
+    #[test]
+    fn a_word_processor_document_is_editable_content() {
+        let paragraph = set(&[state::EDITABLE, state::FOCUSED, state::SHOWING]);
+        assert_eq!(
+            map(role::PARAGRAPH, paragraph),
+            Mapped::Role(Role::TextArea)
+        );
+        assert_eq!(map(role::PARAGRAPH, set(&[])), Mapped::Role(Role::Text));
+        assert!(!states(Role::TextArea, role::PARAGRAPH, paragraph).has(States::DISABLED));
+        assert!(states(Role::TextArea, role::TEXT, paragraph).has(States::DISABLED));
     }
 
     #[test]
     fn a_pressed_toggle_button_reads_as_checked() {
         let on = set(&[state::ENABLED, state::SENSITIVE, state::PRESSED]);
-        assert!(states(Role::Button, on).has(States::CHECKED));
-        assert!(!states(Role::Text, on).has(States::CHECKED));
+        assert!(states(Role::Button, role::PUSH_BUTTON, on).has(States::CHECKED));
+        assert!(!states(Role::Text, role::LABEL, on).has(States::CHECKED));
     }
 }

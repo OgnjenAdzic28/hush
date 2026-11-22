@@ -103,7 +103,7 @@ jobs:
             xvfb dbus dbus-x11 at-spi2-core fontconfig fonts-dejavu-core \
             gnome-calculator mousepad gnome-text-editor \
             libreoffice-writer libreoffice-gtk3 \
-            featherpad qt6-qpa-plugins qt5-gtk-platformtheme \
+            featherpad speedcrunch qt6-qpa-plugins qt5-gtk-platformtheme \
             firefox gdb python3-pyatspi
       - name: Skip Firefox's first-run pages, as on a browser someone already uses
         run: |
@@ -112,7 +112,7 @@ jobs:
             | sudo tee /etc/firefox/policies/policies.json
       - run: cargo build --release -p hush
       - name: Drive them through hush
-        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer qt firefox
+        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer qt qt2 firefox
       - name: Keep the pictures
         if: always()
         uses: actions/upload-artifact@v4
