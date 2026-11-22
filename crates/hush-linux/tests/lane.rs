@@ -155,4 +155,18 @@ fn keys_and_pointer_clicks_reach_an_app_on_hushs_display() {
         shown.contains("77"),
         "a double click on 7 didn't show 77:\n{shown}"
     );
+
+    // A timeline plays on its own schedule, here keys 5 and 6 100 ms apart.
+    let lines = vec![
+        "0 tap escape".to_owned(),
+        "100 tap 5".to_owned(),
+        "200 tap 6".to_owned(),
+    ];
+    let played = engine.timeline("Calculator", None, &lines).unwrap();
+    println!("{played}");
+    let shown = observe_until(&mut engine, "56");
+    assert!(
+        shown.contains("56"),
+        "the timeline didn't type 56:\n{shown}"
+    );
 }
