@@ -11,11 +11,15 @@ mod bus;
 #[cfg(target_os = "linux")]
 mod installed;
 #[cfg(target_os = "linux")]
+mod lane;
+#[cfg(target_os = "linux")]
 mod platform;
 #[cfg(target_os = "linux")]
 mod read;
 #[cfg(any(target_os = "linux", test))]
 mod roles;
+#[cfg(target_os = "linux")]
+mod screen;
 #[cfg(target_os = "linux")]
 mod watch;
 

@@ -12,7 +12,9 @@ hush-core = { path = "../hush-core" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 futures-util = { version = "0.3", default-features = false, features = ["std", "async-await-macro"] }
+jpeg-encoder = "0.7"
 serde = "1"
+x11rb = { version = "0.14", features = ["xtest"] }
 zbus = "5.19"
 
 [dev-dependencies]

@@ -42,6 +42,11 @@ pub(crate) async fn perform(
         }
         Op::Type { text, into } => type_text(bus, window, into, text).await,
         Op::Menu(path) => menu(bus, window, path).await,
+        // Apps Hush started already run on its display.
+        Op::Lane if in_lane => Ok(()),
+        Op::Key { .. } | Op::Click { .. } | Op::Scroll { .. } if in_lane => Err(
+            Error::Unsupported("keys and pointer input on Hush's display aren't built yet; use click, set and type on refs".into()),
+        ),
         Op::Lane | Op::Key { .. } | Op::Click { .. } | Op::Scroll { .. } => {
             Err(Error::Unsupported(NEEDS_LANE.into()))
         }
