@@ -90,9 +90,10 @@ pub enum Step {
         from: Target,
         to: Target,
     },
-    /// Move the app's windows to Hush's lane: a display the user can't see,
-    /// where they render and take pointer input without being on screen.
+    /// Move only the target window to Hush's off-screen display.
     Lane,
+    /// Restore the target window to its position before entering the lane.
+    Unlane,
 }
 
 /// The longest a `wait` may run unless it says otherwise.
@@ -102,7 +103,7 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
 scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
-lane (move the app's windows off screen, where they still render and take clicks)";
+lane (move only the target window off screen) · unlane (restore that window)";
 
 impl Step {
     pub fn parse(line: &str) -> Result<Step, String> {
@@ -169,6 +170,7 @@ impl Step {
             "scroll" => scroll(rest)?,
             "wait" => wait(rest)?,
             "lane" if rest.is_empty() => Step::Lane,
+            "unlane" if rest.is_empty() => Step::Unlane,
             "" => return Err("empty step".into()),
             other => return Err(format!("unknown step '{other}'. Steps: {SYNTAX}")),
         };
@@ -332,6 +334,13 @@ mod tests {
 
     fn r(text: &str) -> Ref {
         Ref::parse(text).unwrap()
+    }
+
+    #[test]
+    fn lane_and_unlane_target_the_selected_window() {
+        assert_eq!(Step::parse("lane").unwrap(), Step::Lane);
+        assert_eq!(Step::parse("unlane").unwrap(), Step::Unlane);
+        assert!(Step::parse("unlane all").is_err());
     }
 
     #[test]

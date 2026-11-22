@@ -8,7 +8,7 @@
 //! command on one app (a timeline) doesn't hold up commands on another. The
 //! main thread is kept for work that must run there (AppleScript).
 //!
-//! The host exits after `IDLE` with no connection open, hiding the apps it
+//! The host exits after `IDLE` with no connection open, restoring the windows it
 //! moved to the lane.
 
 use std::collections::HashMap;
