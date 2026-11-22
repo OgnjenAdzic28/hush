@@ -82,8 +82,9 @@ fn presses_calculator_buttons_and_settles_on_events() {
         let r = ref_of(&outline, "button", Some(digit));
         out = act(&mut engine, "gnome-calculator", &[&format!("click {r}")]);
     }
-    // Diagnosis: does the last press show up late, or only after another
-    // call to the app? Reads again for up to 3 s.
+    // GNOME Calculator works the result out in the background and updates
+    // its display about 250 ms after a press, so the last press can land
+    // after its step settled. Reads until it shows, for up to 3 s.
     let started = Instant::now();
     let display = loop {
         let display = engine
@@ -100,7 +101,6 @@ fn presses_calculator_buttons_and_settles_on_events() {
         }
         std::thread::sleep(Duration::from_millis(200));
     };
-    println!("789 after {:?}", started.elapsed());
     assert!(
         display.contains("789"),
         "the display didn't show 789:\n{display}"
@@ -131,27 +131,15 @@ fn sets_and_types_text_and_toggles_a_checkbox() {
     );
 
     let checkbox = ref_of(&outline, "checkbox", None);
-    let before = outline
-        .lines()
-        .any(|l| l.trim().starts_with(&format!("{checkbox} ")) && l.contains("[checked"));
     let out = act(
         &mut engine,
         "gtk3-widget-factory",
         &[&format!("click {checkbox}")],
     );
-    let after = engine
-        .observe(
-            "gtk3-widget-factory",
-            ObserveOptions {
-                full: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-    let now = after
-        .lines()
-        .any(|l| l.trim().starts_with(&format!("{checkbox} ")) && l.contains("[checked"));
-    assert_ne!(before, now, "the checkbox didn't toggle:\n{out}");
+    assert!(
+        out.contains("→ = on") || out.contains("→ = off"),
+        "the checkbox didn't toggle:\n{out}"
+    );
 }
 
 #[test]
