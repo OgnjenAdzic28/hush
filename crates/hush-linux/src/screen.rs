@@ -127,6 +127,29 @@ impl Screen {
             .ok_or_else(|| "the app has no window on Hush's display".to_owned())
     }
 
+    /// Whether `pid` has a top-level window on this display. The proof an
+    /// app runs here when its environment can't say: Chrome writes its
+    /// process title over it.
+    pub(crate) fn has_window_of(&self, pid: u32) -> bool {
+        let c = &self.connection;
+        let Ok(Ok(tree)) = c.query_tree(self.root).map(|r| r.reply()) else {
+            return false;
+        };
+        let asked: Vec<_> = tree
+            .children
+            .iter()
+            .filter_map(|w| {
+                c.get_property(false, *w, self.net_wm_pid, AtomEnum::CARDINAL, 0, 1)
+                    .ok()
+            })
+            .collect();
+        asked.into_iter().any(|cookie| {
+            cookie
+                .reply()
+                .is_ok_and(|owner| owner.value32().and_then(|mut v| v.next()) == Some(pid))
+        })
+    }
+
     /// The window's frame in root coordinates, if it is shown and is `pid`'s.
     fn shown_frame_of(&self, window: Window, pid: u32) -> X<Option<Rect>> {
         let c = &self.connection;

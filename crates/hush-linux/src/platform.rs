@@ -132,7 +132,7 @@ impl LinuxPlatform {
     /// can't reach the user.
     fn in_lane(&self, pid: Option<u32>) -> bool {
         match (pid, self.lane(false)) {
-            (Some(pid), Ok(Some((lane, _)))) => lane.holds(pid),
+            (Some(pid), Ok(Some((lane, screen)))) => lane.holds(pid) || screen.has_window_of(pid),
             _ => false,
         }
     }
@@ -313,7 +313,13 @@ impl Platform for LinuxPlatform {
         let running = apps::processes_of(app);
         // Any one of them: a browser's helper processes may drop DISPLAY.
         match running.first() {
-            Some(_) if running.iter().any(|pid| lane.holds(*pid)) => Ok(()),
+            Some(_)
+                if running
+                    .iter()
+                    .any(|pid| lane.holds(*pid) || screen.has_window_of(*pid)) =>
+            {
+                Ok(())
+            }
             Some(_) => Err(Error::Failed(format!(
                 "{} is running on your desktop but hasn't shown up to accessibility yet; look again in a moment",
                 app.name

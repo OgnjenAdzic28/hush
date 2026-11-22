@@ -132,6 +132,7 @@ check_chrome() {
       echo "$pid DISPLAY=$(tr '\0' '\n' <"/proc/$pid/environ" | grep -E '^(DISPLAY|ACCESSIBILITY_ENABLED)=' | tr '\n' ' ')"
     done
     display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
+    xwd -root -silent -display ":$display" | convert xwd:- "$out/lane-root.png" || true
     echo "--- a second Chrome with logs:"
     DISPLAY=:$display ACCESSIBILITY_ENABLED=1 timeout 15 google-chrome --user-data-dir="$out/chrome2" \
       --no-first-run --enable-logging=stderr --v=1 2>&1 | grep -iE "atk|atspi|accessib|bridge" | head -20 &
