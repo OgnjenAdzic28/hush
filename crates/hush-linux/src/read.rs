@@ -2,9 +2,12 @@
 //!
 //! As on macOS, speed comes from reading less: nothing that isn't showing is
 //! descended into, chrome like scroll bars is skipped, and a hard budget
-//! keeps one huge window from stalling a call. Each element costs a few
-//! D-Bus round trips (role, states, name, frame, children).
+//! keeps one huge window from stalling a call. On top of that the tree is
+//! read a level at a time, with every call for the level sent at once, so a
+//! window costs about two round trips per level of depth rather than five
+//! per element.
 
+use futures_util::future::{OptionFuture, join_all};
 use hush_core::{AppInfo, Node, Role, Snapshot, States, WindowInfo};
 
 use crate::bus::{Bus, Coords, Element, Reply};
@@ -13,85 +16,144 @@ use crate::roles::{self, Mapped, state};
 /// Elements read per window before the rest is only counted.
 const BUDGET: usize = 2500;
 
-pub(crate) fn window(
+/// A node read so far, with its children's places in the read order.
+struct Read {
+    node: Node<Element>,
+    children: Vec<usize>,
+}
+
+pub(crate) async fn window(
     bus: &Bus,
     app: &AppInfo,
     info: &WindowInfo,
     root: &Element,
 ) -> Reply<Snapshot<Element>> {
     let mut info = info.clone();
-    if let Ok(Some(frame)) = bus.frame(root, Coords::Screen) {
+    if let Ok(Some(frame)) = bus.frame(root, Coords::Screen).await {
         info.frame = frame;
     }
-    let mut nodes: Vec<Node<Element>> = Vec::new();
-    // Depth-first, children pushed in reverse so nodes come out in pre-order.
-    let mut stack: Vec<(Element, Option<usize>)> = vec![(root.clone(), None)];
-    while let Some((element, parent)) = stack.pop() {
-        let read = match read_one(bus, &element, parent.is_none()) {
-            Ok(read) => read,
-            // A child that went away between listing and reading.
-            Err(_) if parent.is_some() => continue,
-            Err(e) => return Err(e),
-        };
-        let Some((mut node, showing)) = read else {
-            continue;
-        };
-        node.parent = parent;
-        let mut children = if showing {
-            bus.children(&element).unwrap_or_default()
-        } else {
-            node.states.set(States::OFFSCREEN, true);
-            Vec::new()
-        };
-        if nodes.len() + stack.len() + children.len() > BUDGET {
-            node.unread += children.len();
-            children.clear();
+    let mut read: Vec<Read> = Vec::new();
+    let mut level: Vec<(Element, Option<usize>)> = vec![(root.clone(), None)];
+    while !level.is_empty() {
+        let results = join_all(
+            level
+                .iter()
+                .map(|(element, parent)| read_one(bus, element, parent.is_none())),
+        )
+        .await;
+        let mut next = Vec::new();
+        for ((_, parent), result) in level.into_iter().zip(results) {
+            let (node, children) = match result {
+                Ok(Some(found)) => found,
+                Ok(None) => continue,
+                // A child that went away between listing and reading.
+                Err(_) if parent.is_some() => continue,
+                Err(e) => return Err(e),
+            };
+            let place = read.len();
+            read.push(Read {
+                node: Node { parent, ..node },
+                children: Vec::new(),
+            });
+            if let Some(parent) = parent {
+                read[parent].children.push(place);
+            }
+            next.extend(children.into_iter().map(|child| (child, Some(place))));
         }
-        let index = nodes.len();
-        nodes.push(node);
-        for child in children.into_iter().rev() {
-            stack.push((child, Some(index)));
+        let room = BUDGET.saturating_sub(read.len());
+        for (_, parent) in next.iter().skip(room) {
+            if let Some(parent) = *parent {
+                read[parent].node.unread += 1;
+            }
         }
+        next.truncate(room);
+        level = next;
     }
-    Ok(Snapshot::new(app.clone(), info, nodes, Vec::new()))
+    Ok(Snapshot::new(
+        app.clone(),
+        info,
+        pre_order(read),
+        Vec::new(),
+    ))
 }
 
-/// One element, and whether it is showing. `None` for chrome that is never
-/// worth reading.
-fn read_one(bus: &Bus, element: &Element, root: bool) -> Reply<Option<(Node<Element>, bool)>> {
-    let set = bus.states(element)?;
-    let role = match roles::map(&bus.role(element)?, set) {
+/// The nodes read level by level, put parents first as `Snapshot` needs,
+/// with each `parent` pointing at its new place.
+fn pre_order(mut read: Vec<Read>) -> Vec<Node<Element>> {
+    let mut nodes = Vec::with_capacity(read.len());
+    if read.is_empty() {
+        return nodes;
+    }
+    let mut stack: Vec<(usize, Option<usize>)> = vec![(0, None)];
+    while let Some((place, parent)) = stack.pop() {
+        let index = nodes.len();
+        let children = std::mem::take(&mut read[place].children);
+        let mut node = read[place].node.clone();
+        node.parent = parent;
+        nodes.push(node);
+        stack.extend(children.into_iter().rev().map(|child| (child, Some(index))));
+    }
+    nodes
+}
+
+/// One element and its children (none when it isn't showing). `None` for
+/// chrome that is never worth reading.
+async fn read_one(
+    bus: &Bus,
+    element: &Element,
+    root: bool,
+) -> Reply<Option<(Node<Element>, Vec<Element>)>> {
+    let (set, role_name, name, frame) = futures_util::join!(
+        bus.states(element),
+        bus.role(element),
+        bus.name(element),
+        bus.frame(element, Coords::Window),
+    );
+    let set = set?;
+    let role = match roles::map(&role_name?, set) {
         Mapped::Role(role) => role,
         Mapped::Skip if !root => return Ok(None),
         Mapped::Skip => Role::Window,
     };
-    let frame = bus.frame(element, Coords::Window).ok().flatten();
-    let mut name = bus.name(element).unwrap_or_default();
-    let mut value = None;
-    if roles::has_text_value(role) {
-        value = bus.text(element).ok();
-    } else if roles::has_number_value(role) {
-        value = bus.number(element).ok().map(number);
-    }
-    if name.trim().is_empty() {
-        name = bus.description(element).unwrap_or_default();
-    }
+    let name = name.unwrap_or_default();
+    let showing = root || set.has(state::SHOWING);
+    // The second round: whatever the first round says is worth asking for.
+    let (text, number, description, children) = futures_util::join!(
+        OptionFuture::from(roles::has_text_value(role).then(|| bus.text(element))),
+        OptionFuture::from(roles::has_number_value(role).then(|| bus.number(element))),
+        OptionFuture::from(name.trim().is_empty().then(|| bus.description(element))),
+        OptionFuture::from(showing.then(|| bus.children(element))),
+    );
+    let value = match (text, number) {
+        (Some(text), _) => text.ok(),
+        (_, Some(n)) => n.ok().map(format_number),
+        _ => None,
+    };
+    let name = match description {
+        Some(description) => description.unwrap_or_default(),
+        None => name,
+    };
+    let mut states = roles::states(role, set);
+    states.set(States::OFFSCREEN, !showing);
     let node = Node {
         handle: element.clone(),
         role,
         name: name.trim().to_owned(),
         value,
-        frame,
-        states: roles::states(role, set),
+        frame: frame.ok().flatten(),
+        states,
         actions: roles::actions(role),
         parent: None,
         unread: 0,
     };
-    Ok(Some((node, root || set.has(state::SHOWING))))
+    Ok(Some((
+        node,
+        children.and_then(Result::ok).unwrap_or_default(),
+    )))
 }
 
 /// Whole numbers without a decimal point, so a slider at 50 reads "50".
-fn number(n: f64) -> String {
+fn format_number(n: f64) -> String {
     if n.fract() == 0.0 && n.abs() < 1e15 {
         format!("{}", n as i64)
     } else {

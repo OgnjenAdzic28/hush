@@ -8,9 +8,11 @@ use hush_core::{
     WindowInfo,
 };
 
+use zbus::block_on;
+
 use crate::apps;
 use crate::bus::{Bus, Element};
-use crate::read;
+use crate::{installed, read};
 
 /// Reads apps through the session's accessibility bus. Connecting is lazy
 /// and retried, so the server starts (and says what's missing) on a machine
@@ -38,7 +40,7 @@ impl LinuxPlatform {
         if let Some(bus) = &*bus {
             return Ok(bus.clone());
         }
-        let connected = Arc::new(Bus::connect().map_err(Error::Failed)?);
+        let connected = Arc::new(block_on(Bus::connect()).map_err(Error::Failed)?);
         *bus = Some(connected.clone());
         Ok(connected)
     }
@@ -58,7 +60,7 @@ impl LinuxPlatform {
     }
 
     fn list(&self, bus: &Bus) -> Result<Vec<AppInfo>> {
-        let running = apps::running(bus).map_err(failed)?;
+        let running = block_on(apps::running(bus)).map_err(failed)?;
         let mut roots = lock(&self.roots);
         roots.clear();
         for app in &running {
@@ -96,7 +98,7 @@ impl Platform for LinuxPlatform {
         if let Some(query) = query {
             let wanted = query.to_lowercase();
             found.retain(|app| app.name.to_lowercase().contains(&wanted));
-            for installed in apps::installed(query) {
+            for installed in installed::matching(query) {
                 if !found.iter().any(|app| app.name == installed.name) {
                     found.push(installed);
                 }
@@ -108,7 +110,7 @@ impl Platform for LinuxPlatform {
     fn windows(&self, app: &AppInfo) -> Result<Vec<WindowInfo>> {
         let bus = self.bus()?;
         let root = self.root(&bus, app)?;
-        let windows = apps::windows(&bus, &root).map_err(failed)?;
+        let windows = block_on(apps::windows(&bus, &root)).map_err(failed)?;
         let mut known = lock(&self.windows);
         Ok(windows
             .into_iter()
@@ -132,7 +134,7 @@ impl Platform for LinuxPlatform {
                     .ok_or_else(|| Error::Stale(format!("window \"{}\" closed", window.title)))?
             }
         };
-        read::window(&bus, app, window, &element).map_err(failed)
+        block_on(read::window(&bus, app, window, &element)).map_err(failed)
     }
 
     fn activity(&self, _app: &AppInfo) -> Activity {

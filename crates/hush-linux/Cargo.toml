@@ -11,6 +11,7 @@ rust-version.workspace = true
 hush-core = { path = "../hush-core" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["std", "async-await-macro"] }
 serde = "1"
 zbus = "5.19"
 
