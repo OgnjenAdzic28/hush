@@ -9,8 +9,7 @@
 use std::fs::File;
 use std::time::Instant;
 
-use hush_core::{Button, Error, Input, Key, KeyCombo, NamedKey, Played, Result, Timed};
-use x11rb::connection::Connection;
+use hush_core::{Button, Error, Input, Key, KeyCombo, Played, Result, Timed};
 use x11rb::protocol::xproto::{
     BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConfigureWindowAux, ConnectionExt as _, InputFocus,
     KEY_PRESS_EVENT, KEY_RELEASE_EVENT, Keycode, MOTION_NOTIFY_EVENT, StackMode, Window,
@@ -18,6 +17,7 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::rust_connection::RustConnection;
 
+use crate::keymap::{Keymap, keysym};
 use crate::lane::Lane;
 use crate::screen::Screen;
 
@@ -124,6 +124,25 @@ impl<'a> Sender<'a> {
         Ok(held)
     }
 
+    /// Types `text` as key presses into whatever has the keyboard focus.
+    pub(crate) fn text(&self, text: &str) -> Result<()> {
+        let (shift, _) = self.keys.find(SHIFT_L).ok_or_else(|| x("no shift key"))?;
+        for c in text.chars() {
+            let sym = match c {
+                '\n' => 0xff0d,
+                '\t' => 0xff09,
+                c => keysym(Key::Char(c)),
+            };
+            let (code, shifted) = self.keys.typing(self.connection, sym)?;
+            if shifted {
+                self.press(&[shift, code])?;
+            } else {
+                self.press(&[code])?;
+            }
+        }
+        self.flush()
+    }
+
     pub(crate) fn combo(&self, combo: KeyCombo, repeat: u16) -> Result<()> {
         let codes = self.codes(combo)?;
         for _ in 0..repeat {
@@ -227,100 +246,5 @@ fn number(button: Button) -> u8 {
     match button {
         Button::Left => 1,
         Button::Right => 3,
-    }
-}
-
-/// The X keysym for a key.
-fn keysym(key: Key) -> u32 {
-    use NamedKey::*;
-    match key {
-        // Latin-1 keysyms are the characters' code points; the rest are
-        // the code point plus 0x01000000.
-        Key::Char(c) if (' '..='~').contains(&c) || ('\u{a0}'..='\u{ff}').contains(&c) => c as u32,
-        Key::Char(c) => 0x0100_0000 + c as u32,
-        Key::Named(named) => match named {
-            Enter => 0xff0d,
-            Tab => 0xff09,
-            Space => 0x20,
-            Escape => 0xff1b,
-            Backspace => 0xff08,
-            ForwardDelete => 0xffff,
-            Left => 0xff51,
-            Up => 0xff52,
-            Right => 0xff53,
-            Down => 0xff54,
-            Home => 0xff50,
-            End => 0xff57,
-            PageUp => 0xff55,
-            PageDown => 0xff56,
-            F(n) => 0xffbe + u32::from(n) - 1,
-        },
-    }
-}
-
-/// The lane's keyboard: keysyms by key code, plain and shifted.
-struct Keymap {
-    first: Keycode,
-    per_code: usize,
-    syms: Vec<u32>,
-}
-
-impl Keymap {
-    fn read(c: &RustConnection) -> Result<Keymap> {
-        let setup = c.setup();
-        let (first, last) = (setup.min_keycode, setup.max_keycode);
-        let reply = c
-            .get_keyboard_mapping(first, last - first + 1)
-            .map_err(x)?
-            .reply()
-            .map_err(x)?;
-        Ok(Keymap {
-            first,
-            per_code: usize::from(reply.keysyms_per_keycode),
-            syms: reply.keysyms,
-        })
-    }
-
-    /// The key code that types `sym`, and whether it needs shift.
-    fn find(&self, sym: u32) -> Option<(Keycode, bool)> {
-        find(&self.syms, self.per_code, sym).map(|(i, shifted)| (self.first + i as u8, shifted))
-    }
-}
-
-/// The key index whose plain (else shifted) keysym is `sym`.
-fn find(syms: &[u32], per_code: usize, sym: u32) -> Option<(usize, bool)> {
-    if per_code == 0 {
-        return None;
-    }
-    let codes = || syms.chunks(per_code).enumerate();
-    codes()
-        .find(|(_, row)| row.first() == Some(&sym))
-        .map(|(i, _)| (i, false))
-        .or_else(|| {
-            codes()
-                .find(|(_, row)| row.get(1) == Some(&sym))
-                .map(|(i, _)| (i, true))
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn plain_keys_win_over_shifted_ones() {
-        // Two keys of two columns: "1 !" and "= +".
-        let syms = [0x31, 0x21, 0x3d, 0x2b];
-        assert_eq!(find(&syms, 2, 0x31), Some((0, false)));
-        assert_eq!(find(&syms, 2, 0x2b), Some((1, true)));
-        assert_eq!(find(&syms, 2, 0x7a), None);
-    }
-
-    #[test]
-    fn keysyms_follow_the_x_tables() {
-        assert_eq!(keysym(Key::Char('a')), 0x61);
-        assert_eq!(keysym(Key::Named(NamedKey::Enter)), 0xff0d);
-        assert_eq!(keysym(Key::Named(NamedKey::F(12))), 0xffc9);
-        assert_eq!(keysym(Key::Char('€')), 0x0100_20ac);
     }
 }

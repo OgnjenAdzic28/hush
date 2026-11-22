@@ -39,7 +39,10 @@ async fn describe(bus: &Bus, root: Element) -> Option<Running> {
     let path = pid.and_then(executable);
     // The name a person knows the app by is its menu entry's ("Calculator"),
     // which toolkits often don't report ("gnome-calculator").
-    let entry = path.as_deref().and_then(installed::by_executable);
+    let args = pid.map(arguments).unwrap_or_default();
+    let entry = path
+        .as_deref()
+        .and_then(|p| installed::by_process(p, &args));
     let reported = name.unwrap_or_default();
     let name = match (&entry, reported.is_empty()) {
         (Some(entry), _) => entry.name.clone(),
@@ -120,6 +123,18 @@ pub(crate) fn window_id(element: &Element) -> u64 {
 fn command(pid: u32) -> Option<String> {
     let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
     Some(comm.trim().to_owned())
+}
+
+/// The process's command line after the program.
+fn arguments(pid: u32) -> Vec<String> {
+    let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
+        return Vec::new();
+    };
+    raw.split(|b| *b == 0)
+        .skip(1)
+        .filter(|arg| !arg.is_empty())
+        .map(|arg| String::from_utf8_lossy(arg).into_owned())
+        .collect()
 }
 
 fn executable(pid: u32) -> Option<String> {

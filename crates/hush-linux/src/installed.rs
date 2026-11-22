@@ -1,5 +1,6 @@
 //! Installed apps, from the desktop entries in the XDG data directories.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -24,21 +25,70 @@ pub(crate) fn matching(query: &str) -> Vec<AppInfo> {
         .collect()
 }
 
-/// The installed app whose command runs `executable`, so a running
-/// `/usr/bin/gnome-calculator` is called "Calculator", as its menu entry is.
-pub(crate) fn by_executable(executable: &str) -> Option<AppInfo> {
-    let file = Path::new(executable).file_name()?;
-    all().into_iter().find(|app| {
-        app.path
-            .as_deref()
-            .and_then(program)
-            .is_some_and(|p| Path::new(p).file_name() == Some(file))
-    })
+/// The installed app whose command runs the process, so a running
+/// `/usr/bin/gnome-calculator` is "Calculator", as its menu entry is.
+/// Launchers that are scripts are followed to the program they start:
+/// `libreoffice --writer` runs `program/soffice` then `soffice.bin
+/// --writer`. Among entries for one program, the one whose arguments the
+/// process has wins, so that process is "LibreOffice Writer", not Calc.
+pub(crate) fn by_process(executable: &str, args: &[String]) -> Option<AppInfo> {
+    best(all(), args, |program| runs(program, Path::new(executable)))
 }
 
-/// The program an Exec line runs: its first word.
-fn program(exec: &str) -> Option<&str> {
-    exec.split_whitespace().next()
+fn best(entries: Vec<AppInfo>, args: &[String], runs: impl Fn(&str) -> bool) -> Option<AppInfo> {
+    entries
+        .into_iter()
+        .filter_map(|app| {
+            let mut words = app.path.as_deref()?.split_whitespace();
+            if !runs(words.next()?) {
+                return None;
+            }
+            let wanted: Vec<&str> = words.collect();
+            let has_args = wanted.iter().all(|w| args.iter().any(|a| a == w));
+            Some(((has_args, if has_args { wanted.len() } else { 0 }), app))
+        })
+        // The first of equally good entries, in scan order.
+        .rev()
+        .max_by_key(|(rank, _)| *rank)
+        .map(|(_, app)| app)
+}
+
+/// Whether running `program` from an Exec line ends up as `exe`.
+fn runs(program: &str, exe: &Path) -> bool {
+    if Path::new(program).file_name() == exe.file_name() {
+        return true;
+    }
+    let Some(found) = resolved(program) else {
+        return false;
+    };
+    found == exe || (exe.extension().is_some_and(|e| e == "bin") && exe.with_extension("") == found)
+}
+
+/// Where `program` is on disk, links followed. Remembered, since every
+/// listing of running apps asks this for each entry.
+fn resolved(program: &str) -> Option<PathBuf> {
+    static RESOLVED: Mutex<Option<HashMap<String, Option<PathBuf>>>> = Mutex::new(None);
+    let mut cache = RESOLVED.lock().unwrap_or_else(PoisonError::into_inner);
+    cache
+        .get_or_insert_with(HashMap::new)
+        .entry(program.to_owned())
+        .or_insert_with(|| {
+            let candidates: Vec<PathBuf> = if program.contains('/') {
+                vec![PathBuf::from(program)]
+            } else {
+                std::env::var_os("PATH")
+                    .map(|path| {
+                        std::env::split_paths(&path)
+                            .map(|dir| dir.join(program))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            };
+            candidates
+                .iter()
+                .find_map(|c| std::fs::canonicalize(c).ok())
+        })
+        .clone()
 }
 
 fn all() -> Vec<AppInfo> {
@@ -168,7 +218,38 @@ mod tests {
             without_field_codes("flatpak run org.gnome.Calculator %U --x=50%%"),
             "flatpak run org.gnome.Calculator --x=50%"
         );
-        assert_eq!(program("gtk3-demo --run x"), Some("gtk3-demo"));
+    }
+
+    fn entry(name: &str, exec: &str) -> AppInfo {
+        AppInfo {
+            name: name.into(),
+            pid: None,
+            id: None,
+            path: Some(exec.into()),
+            frontmost: false,
+        }
+    }
+
+    #[test]
+    fn a_process_is_the_entry_whose_arguments_it_has() {
+        let entries = || {
+            vec![
+                entry("LibreOffice", "libreoffice"),
+                entry("LibreOffice Calc", "libreoffice --calc"),
+                entry("LibreOffice Writer", "libreoffice --writer"),
+                entry("Calculator", "gnome-calculator"),
+            ]
+        };
+        let soffice = |program: &str| program == "libreoffice";
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        let named = |a: &[&str]| best(entries(), &args(a), soffice).map(|app| app.name);
+        assert_eq!(
+            named(&["--writer", "--splash-pipe=5"]).as_deref(),
+            Some("LibreOffice Writer")
+        );
+        assert_eq!(named(&["--calc"]).as_deref(), Some("LibreOffice Calc"));
+        assert_eq!(named(&[]).as_deref(), Some("LibreOffice"));
+        assert_eq!(best(entries(), &[], |_| false), None);
     }
 
     #[test]
