@@ -28,6 +28,34 @@ pub(crate) async fn window(
     info: &WindowInfo,
     root: &Element,
 ) -> Reply<Snapshot<Element>> {
+    let snapshot = read(bus, app, info, root, Shown::Showing).await?;
+    // GTK 4 before 4.10 marks only the window itself showing, and the rest
+    // merely visible: the whole window would read as hidden.
+    let nothing_shown = snapshot.nodes.len() > 1
+        && snapshot.nodes[1..]
+            .iter()
+            .all(|node| node.states.has(States::OFFSCREEN));
+    if nothing_shown {
+        return read(bus, app, info, root, Shown::Visible).await;
+    }
+    Ok(snapshot)
+}
+
+/// Which state says an element is on screen.
+#[derive(Clone, Copy)]
+enum Shown {
+    Showing,
+    /// For toolkits that never report showing.
+    Visible,
+}
+
+async fn read(
+    bus: &Bus,
+    app: &AppInfo,
+    info: &WindowInfo,
+    root: &Element,
+    shown: Shown,
+) -> Reply<Snapshot<Element>> {
     let mut info = info.clone();
     if let Ok(Some(frame)) = bus.frame(root, Coords::Screen).await {
         info.frame = frame;
@@ -38,7 +66,7 @@ pub(crate) async fn window(
         let results = join_all(
             level
                 .iter()
-                .map(|(element, parent)| read_one(bus, element, parent.is_none())),
+                .map(|(element, parent)| read_one(bus, element, parent.is_none(), shown)),
         )
         .await;
         let mut next = Vec::new();
@@ -102,6 +130,7 @@ async fn read_one(
     bus: &Bus,
     element: &Element,
     root: bool,
+    shown: Shown,
 ) -> Reply<Option<(Node<Element>, Vec<Element>)>> {
     let (set, role_name, name, frame) = futures_util::join!(
         bus.states(element),
@@ -117,7 +146,11 @@ async fn read_one(
         Mapped::Skip => Role::Window,
     };
     let name = name.unwrap_or_default();
-    let showing = root || set.has(state::SHOWING);
+    let showing = root
+        || set.has(match shown {
+            Shown::Showing => state::SHOWING,
+            Shown::Visible => state::VISIBLE,
+        });
     // The second round: whatever the first round says is worth asking for.
     let (text, number, description, children) = futures_util::join!(
         OptionFuture::from(roles::has_text_value(role, set).then(|| bus.text(element))),
