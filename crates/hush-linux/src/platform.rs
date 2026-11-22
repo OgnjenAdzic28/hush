@@ -263,6 +263,25 @@ impl Platform for LinuxPlatform {
             .map_err(Error::Failed)
     }
 
+    fn record_start(&self, window: &WindowInfo) -> Result<u64> {
+        let (screen, found, frame) = self.on_lane(window, CAPTURE_NEEDS_LANE)?;
+        crate::record::start(screen, found, (frame.w as u32, frame.h as u32))
+    }
+
+    fn record_cancel(&self, id: u64) {
+        crate::record::cancel(id);
+    }
+
+    fn record_stop(
+        &self,
+        id: u64,
+        marks: &[hush_core::cursor::Mark],
+        label: &str,
+        out: &std::path::Path,
+    ) -> Result<String> {
+        crate::record::stop(id, marks, label, out)
+    }
+
     fn launch(&self, app: &AppInfo) -> Result<()> {
         let (lane, _) = self
             .lane(true)?

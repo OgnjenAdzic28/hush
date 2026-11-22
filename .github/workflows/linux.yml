@@ -39,7 +39,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xvfb dbus dbus-x11 at-spi2-core \
-            gtk-3-examples gnome-calculator
+            gtk-3-examples gnome-calculator \
+            ffmpeg fontconfig fonts-dejavu-core
       - run: cargo build --release -p hush-linux --tests
       - name: Read real apps
         run: xvfb-run -a dbus-run-session -- cargo test --release -p hush-linux -- --ignored --test-threads=1 --nocapture
+      - name: Keep the test recording, to look at the drawn cursor
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-recording
+          path: /tmp/hush-linux-recording.mp4
+          if-no-files-found: ignore
+          retention-days: 7

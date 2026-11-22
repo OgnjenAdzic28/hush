@@ -119,6 +119,22 @@ impl Screen {
         region: Option<Rect>,
         max_width: u32,
     ) -> X<Image> {
+        let (rgb, w, h) = self.grab(window, size, region)?;
+        let (rgb, w, h) = shrink(rgb, w, h, max_width as usize);
+        Ok(Image {
+            jpeg: encode(&rgb, w, h, QUALITY)?,
+            width: w as u32,
+            height: h as u32,
+        })
+    }
+
+    /// The pixels of `window` (or a region of it) as RGB, with their size.
+    pub(crate) fn grab(
+        &self,
+        window: Window,
+        size: (u32, u32),
+        region: Option<Rect>,
+    ) -> X<(Vec<u8>, usize, usize)> {
         let full = Rect {
             x: 0.0,
             y: 0.0,
@@ -150,18 +166,17 @@ impl Screen {
                 image.data.len()
             )));
         }
-        let rgb = bgrx_to_rgb(&image.data, w * h);
-        let (rgb, w, h) = shrink(rgb, w, h, max_width as usize);
-        let mut jpeg = Vec::new();
-        jpeg_encoder::Encoder::new(&mut jpeg, QUALITY)
-            .encode(&rgb, w as u16, h as u16, jpeg_encoder::ColorType::Rgb)
-            .map_err(x)?;
-        Ok(Image {
-            jpeg,
-            width: w as u32,
-            height: h as u32,
-        })
+        Ok((bgrx_to_rgb(&image.data, w * h), w, h))
     }
+}
+
+/// RGB pixels as a JPEG.
+pub(crate) fn encode(rgb: &[u8], w: usize, h: usize, quality: u8) -> X<Vec<u8>> {
+    let mut jpeg = Vec::new();
+    jpeg_encoder::Encoder::new(&mut jpeg, quality)
+        .encode(rgb, w as u16, h as u16, jpeg_encoder::ColorType::Rgb)
+        .map_err(x)?;
+    Ok(jpeg)
 }
 
 /// `region` cut to `bounds`, in whole pixels; `None` when nothing is left.
