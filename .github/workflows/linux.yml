@@ -1,0 +1,45 @@
+name: Linux apps
+
+# Reads real GTK 3 and GTK 4 apps through AT-SPI, headlessly: Xvfb is the display
+# and dbus-run-session a private session bus, so nothing needs a desktop.
+on:
+  pull_request:
+    paths:
+      - "crates/hush-linux/**"
+      - "crates/hush-core/**"
+      - "crates/hush/**"
+      - "Cargo.lock"
+      - ".github/workflows/linux.yml"
+  push:
+    branches: [main]
+    paths:
+      - "crates/hush-linux/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # GTK 4 draws in software under Xvfb.
+      GSK_RENDERER: cairo
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain
+      - uses: Swatinem/rust-cache@v2
+      - name: Install a headless desktop and test apps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb dbus dbus-x11 at-spi2-core \
+            gtk-3-examples gnome-calculator
+      - run: cargo build --release -p hush-linux --tests
+      - name: Read real apps
+        run: xvfb-run -a dbus-run-session -- cargo test --release -p hush-linux -- --ignored --test-threads=1 --nocapture

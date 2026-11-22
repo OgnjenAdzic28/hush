@@ -1,0 +1,19 @@
+[package]
+name = "hush-linux"
+description = "The Linux platform for Hush: AT-SPI accessibility, and input that stays off the user's display"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+hush-core = { path = "../hush-core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["std", "async-await-macro"] }
+serde = "1"
+zbus = "5.19"
+
+[lints]
+workspace = true
