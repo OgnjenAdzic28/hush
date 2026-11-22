@@ -107,9 +107,24 @@ check_calculator() {
 check_gtk3() { typed Mousepad 20 && pictured Mousepad gtk3; }
 check_gtk4() { typed "Text Editor" 20 && pictured "Text Editor" gtk4; }
 check_writer() { typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer; }
-check_qt() { typed FeatherPad 20 && pictured FeatherPad qt; }
+check_qt() {
+  typed FeatherPad 20 && pictured FeatherPad qt && return 0
+  # Why Qt didn't show up: is it running, and what does it say on start?
+  ps -eo pid,args | grep -i [f]eatherpad || echo "featherpad isn't running"
+  display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display" 2>/dev/null || true)
+  echo "lane display: $display"
+  DISPLAY=$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 QT_DEBUG_PLUGINS=0 \
+    timeout 5 featherpad 2>&1 | tail -20 || true
+  return 1
+}
+# Loads a page and reads its text back.
 check_firefox() {
-  opened Firefox 60 && pictured Firefox firefox
+  opened Firefox 60 &&
+    h observe Firefox --focus e2 | head -40 &&
+    pictured Firefox firefox-start &&
+    h act Firefox "key ctrl+l" "type data:text/html,<h1>hello from hush</h1>" "key Return" &&
+    shows Firefox "hello from hush" 20 &&
+    pictured Firefox firefox
 }
 
 for app in "$@"; do
