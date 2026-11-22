@@ -104,7 +104,7 @@ jobs:
             gnome-calculator mousepad gnome-text-editor \
             libreoffice-writer libreoffice-gtk3 \
             featherpad qt6-qpa-plugins qt5-gtk-platformtheme \
-            firefox gdb
+            firefox gdb python3-pyatspi
       - name: Skip Firefox's first-run pages, as on a browser someone already uses
         run: |
           sudo install -d /etc/firefox/policies

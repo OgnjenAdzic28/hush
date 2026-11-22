@@ -106,23 +106,33 @@ check_calculator() {
 }
 check_gtk3() { typed Mousepad 20 && pictured Mousepad gtk3; }
 check_gtk4() { typed "Text Editor" 20 && pictured "Text Editor" gtk4; }
-check_writer() { typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer; }
+check_writer() {
+  typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer && return 0
+  python3 scripts/atspi-tree.py soffice 14 | grep -v "menu item" | head -250
+  return 1
+}
 check_qt() {
   typed FeatherPad 20 && pictured FeatherPad qt && return 0
-  # Why Qt didn't show up: is it running, and what does it say on start?
-  ps -eo pid,args | grep -i [f]eatherpad || echo "featherpad isn't running"
-  display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display" 2>/dev/null || true)
-  echo "lane display: $display"
-  DISPLAY=$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 QT_DEBUG_PLUGINS=0 \
-    timeout 5 featherpad 2>&1 | tail -20 || true
+  # Why Qt didn't show up: what it says about accessibility on start.
+  pkill -x featherpad || true
+  display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
+  DISPLAY=:$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 \
+    QT_LOGGING_RULES="qt.accessibility*=true" timeout 8 featherpad >"$out/qt.log" 2>&1 &
+  sleep 5 # Diagnostics only: give it time to start and register.
+  python3 scripts/atspi-tree.py featherpad 3 || true
+  wait || true
+  tail -40 "$out/qt.log"
   return 1
 }
 # Loads a page and reads its text back.
 check_firefox() {
-  opened Firefox 60 &&
-    h observe Firefox --focus e2 | head -40 &&
-    pictured Firefox firefox-start &&
-    h act Firefox "key ctrl+l" "type data:text/html,<h1>hello from hush</h1>" "key Return" &&
+  opened Firefox 60 && pictured Firefox firefox-start || return 1
+  # A new profile asks to accept the terms first; an agent clicks Continue.
+  if shows Firefox 'button "Continue"' 10; then
+    h act Firefox "click $(grep -m1 -oE '\bb[0-9]+ button "Continue"' "$out/last.txt" | cut -d' ' -f1)" || return 1
+  fi
+  python3 scripts/atspi-tree.py firefox 8 | head -120
+  h act Firefox "key ctrl+l" "type data:text/html,<h1>hello from hush</h1>" "key Return" &&
     shows Firefox "hello from hush" 20 &&
     pictured Firefox firefox
 }
