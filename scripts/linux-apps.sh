@@ -117,8 +117,12 @@ check_firefox() {
   if shows Firefox 'button "Continue"' 10; then
     h act Firefox "click $(grep -m1 -oE '\bb[0-9]+ button "Continue"' "$out/last.txt" | cut -d' ' -f1)" || return 1
   fi
-  h act Firefox "key ctrl+l" "type data:text/html,<h1>hello from hush</h1>" "key Return" &&
-    shows Firefox 'heading "hello from hush"' 20 &&
+  # Typed as key presses; ✓ and é aren't on the keyboard, so they go on
+  # spare keys, which must come back for the second page.
+  h act Firefox "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return" &&
+    shows Firefox 'heading "hello from hush ✓"' 20 &&
+    h act Firefox "key ctrl+l" "type data:text/html;charset=utf-8,<h1>café ✓</h1>" "key Return" &&
+    shows Firefox 'heading "café ✓"' 20 &&
     pictured Firefox firefox
 }
 

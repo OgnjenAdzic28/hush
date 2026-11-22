@@ -100,6 +100,21 @@ impl Keymap {
         self.syms.borrow_mut()[at..at + self.per_code].copy_from_slice(&row);
         Ok((code, false))
     }
+
+    /// Empties the spare keys `typing` used, so the next typing finds them
+    /// spare again. Safe right after the presses: the app reads them in
+    /// order, before it hears of this change.
+    pub(crate) fn release(&self, c: &RustConnection) -> Result<()> {
+        let used = self.next_spare.replace(0).min(self.spare.len());
+        let empty = vec![0; self.per_code];
+        for &code in &self.spare[..used] {
+            c.change_keyboard_mapping(1, code, self.per_code as u8, &empty)
+                .map_err(x)?;
+            let at = usize::from(code - self.first) * self.per_code;
+            self.syms.borrow_mut()[at..at + self.per_code].copy_from_slice(&empty);
+        }
+        Ok(())
+    }
 }
 
 /// Indexes of keys with no keysym at all.
