@@ -10,6 +10,7 @@ on:
       - "crates/hush/**"
       - "Cargo.lock"
       - ".github/workflows/linux.yml"
+      - "scripts/linux-apps.sh"
   push:
     branches: [main]
     paths:
@@ -74,5 +75,44 @@ jobs:
         with:
           name: linux-recording
           path: /tmp/hush-linux-recording.mp4
+          if-no-files-found: ignore
+          retention-days: 7
+
+  more-apps:
+    # The apps agents reach for: a GTK 3 and a GTK 4 editor, LibreOffice,
+    # a Qt app and Firefox, each started on Hush's display, read, typed into
+    # and pictured through the hush binary.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GSK_RENDERER: cairo
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install the apps
+        run: |
+          # Ubuntu's firefox package is a snap, which doesn't run here;
+          # Mozilla's own repository has a plain package.
+          sudo install -d -m 0755 /etc/apt/keyrings
+          curl -fsSL https://packages.mozilla.org/apt/repo-signing-key.gpg | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc >/dev/null
+          echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" | sudo tee /etc/apt/sources.list.d/mozilla.list
+          printf 'Package: *\nPin: origin packages.mozilla.org\nPin-Priority: 1000\n' | sudo tee /etc/apt/preferences.d/mozilla
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xvfb dbus dbus-x11 at-spi2-core fontconfig fonts-dejavu-core \
+            gnome-calculator mousepad gnome-text-editor \
+            libreoffice-writer libreoffice-gtk3 \
+            featherpad qt6-qpa-plugins qt5-gtk-platformtheme \
+            firefox
+      - run: cargo build --release -p hush
+      - name: Drive them through hush
+        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer qt firefox
+      - name: Keep the pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-app-pictures
+          path: ${{ runner.temp }}/hush-apps
           if-no-files-found: ignore
           retention-days: 7

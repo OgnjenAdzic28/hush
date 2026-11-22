@@ -133,6 +133,13 @@ impl Lane {
             .env_remove("WAYLAND_DISPLAY")
             .env("GDK_BACKEND", "x11")
             .env("QT_QPA_PLATFORM", "xcb")
+            // Hush reads the app through AT-SPI, so it must publish its
+            // tree from the start. Qt, Chromium and Firefox only do when
+            // told to, or when they see an assistive tool at startup.
+            .env("QT_LINUX_ACCESSIBILITY_ALWAYS_ON", "1")
+            .env("QT_ACCESSIBILITY", "1")
+            .env("ACCESSIBILITY_ENABLED", "1")
+            .env("GNOME_ACCESSIBILITY", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
