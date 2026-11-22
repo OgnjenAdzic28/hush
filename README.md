@@ -2,6 +2,8 @@
 
 **The fastest computer use for AI agents.**
 
+https://github.com/user-attachments/assets/d415d27b-6906-4f0c-a700-dbc79e826e34
+
 Hush lets any agent see and drive the apps on your computer, in the background, while you keep working.
 Read a window, click, type, read it again: **178 ms**. The next fastest tool takes 653 ms.
 
