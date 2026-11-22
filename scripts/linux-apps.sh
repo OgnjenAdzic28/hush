@@ -127,22 +127,16 @@ check_firefox() {
 
 # Chromium's family, the same way: load a page and read its heading.
 check_chrome() {
-  opened "Google Chrome" 60 || return 1
-  if ! pictured "Google Chrome" chrome-start; then
-    display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
-    for w in $(xwininfo -display ":$display" -root -children | grep -oE '^ +0x[0-9a-f]+' ); do
-      echo "window $w: $(xprop -display ":$display" -id "$w" _NET_WM_PID WM_CLASS 2>&1 | tr '\n' ' ')"
-    done
-    python3 -c "
-import pyatspi
-for a in pyatspi.Registry.getDesktop(0):
-    if a is not None: print(a.name, a.get_process_id())"
-    pgrep -a chrome | cut -c1-80 | head -4
+  opened "Google Chrome" 60 && pictured "Google Chrome" chrome-start || return 1
+  if ! h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return"; then
+    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)"
     return 1
   fi
-  h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return" &&
-    shows "Google Chrome" 'heading "hello from hush ✓"' 20 &&
-    pictured "Google Chrome" chrome
+  if ! shows "Google Chrome" 'heading "hello from hush ✓"' 20; then
+    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)"
+    return 1
+  fi
+  pictured "Google Chrome" chrome
 }
 
 for app in "$@"; do
