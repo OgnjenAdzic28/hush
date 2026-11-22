@@ -108,7 +108,6 @@ check_calculator() {
 check_gtk3() { typed Mousepad 20 && pictured Mousepad gtk3; }
 check_gtk4() { typed "Text Editor" 20 && pictured "Text Editor" gtk4; }
 check_writer() { typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer; }
-# Qt apps don't register on the accessibility bus under Xvfb yet (#132).
 check_qt() { typed FeatherPad 20 && pictured FeatherPad qt; }
 # Loads a page and reads its text back.
 check_firefox() {

@@ -304,10 +304,25 @@ impl Platform for LinuxPlatform {
     }
 
     fn launch(&self, app: &AppInfo) -> Result<()> {
-        let (lane, _) = self
+        let (lane, screen) = self
             .lane(true)?
             .ok_or_else(|| Error::Failed("Hush's display didn't start".into()))?;
-        lane.launch(app).map_err(Error::Failed)
+        // Already running but not yet on the accessibility bus. A second
+        // copy would hand off to a single-instance app and open a window on
+        // the person's desktop, so don't start one.
+        match apps::processes_of(app).first() {
+            Some(pid) if lane.holds(*pid) => Ok(()),
+            Some(_) => Err(Error::Failed(format!(
+                "{} is running on your desktop but hasn't shown up to accessibility yet; look again in a moment",
+                app.name
+            ))),
+            None => {
+                screen
+                    .announce_bus(self.bus()?.address())
+                    .map_err(Error::Failed)?;
+                lane.launch(app).map_err(Error::Failed)
+            }
+        }
     }
 
     fn script(&self, _app: &AppInfo, _source: &str, _language: ScriptLanguage) -> Result<String> {

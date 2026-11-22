@@ -10,9 +10,10 @@ use hush_core::{Image, Rect};
 use x11rb::connection::Connection;
 use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, Drawable, ImageFormat, MapState, Window,
+    AtomEnum, ConnectionExt as _, Drawable, ImageFormat, MapState, PropMode, Window,
 };
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::lane::Lane;
 
@@ -64,6 +65,30 @@ impl Screen {
             root,
             net_wm_pid,
         })
+    }
+
+    /// Puts the accessibility bus's address on the root window, as the bus
+    /// launcher does on an X desktop. Qt 5 reads it there before anything
+    /// else; asking the session bus instead, it contacts the registry
+    /// before it has connected and never registers.
+    pub(crate) fn announce_bus(&self, address: &str) -> X<()> {
+        let c = &self.connection;
+        let atom = c
+            .intern_atom(false, b"AT_SPI_BUS")
+            .map_err(x)?
+            .reply()
+            .map_err(x)?
+            .atom;
+        c.change_property8(
+            PropMode::REPLACE,
+            self.root,
+            atom,
+            AtomEnum::STRING,
+            address.as_bytes(),
+        )
+        .map_err(x)?
+        .check()
+        .map_err(x)
     }
 
     pub(crate) fn connection(&self) -> &RustConnection {
