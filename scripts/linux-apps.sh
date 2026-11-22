@@ -117,12 +117,15 @@ check_qt() {
   pkill -x featherpad || true
   display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
   ldd "$(command -v featherpad)" | grep -i "qt.*gui" || true
+  timeout 10 dbus-monitor --session >"$out/qt-dbus.log" 2>&1 &
   DISPLAY=:$display QT_QPA_PLATFORM=xcb QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1 QT_FORCE_STDERR_LOGGING=1 \
     QT_LOGGING_RULES="qt.accessibility*=true;qt.qpa.*=true" timeout 8 featherpad >"$out/qt.log" 2>&1 &
   sleep 5 # Diagnostics only: give it time to start and register.
   python3 scripts/atspi-tree.py featherpad 3 || true
   wait || true
   grep -iv "xcb.*event\|qt.qpa.events" "$out/qt.log" | tail -40
+  echo "--- session bus calls about accessibility while it started:"
+  grep -iE "a11y|atspi|GetAddress|IsEnabled|ScreenReader" "$out/qt-dbus.log" | head -40
   return 1
 }
 check_qt2() { typed SpeedCrunch 20 && pictured SpeedCrunch qt2; }

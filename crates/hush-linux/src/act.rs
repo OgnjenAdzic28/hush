@@ -20,6 +20,10 @@ const SHOW_MENU: [&str; 5] = ["showmenu", "show menu", "menu", "popup", "press"]
 /// elements, which would take focus from the user.
 const FOCUS_ON_USER_DISPLAY: &str = "focusing an element raises the app's window on Linux, which would take your focus; use set or type with its ref instead";
 
+const NO_TARGET: &str = "nothing editable has focus in this window; give type a ref";
+pub(crate) const IGNORED: &str =
+    "the app accepted the text but didn't insert it; focus the field, then type";
+
 pub(crate) const NEEDS_LANE: &str = "keys and pointer input on Linux only go to apps Hush runs on its own display, so they can't reach yours; for this app use click, set and type on refs";
 
 pub(crate) async fn perform(
@@ -40,7 +44,11 @@ pub(crate) async fn perform(
         Op::ScrollIntoView(element) => {
             refused(bus.scroll_to(element).await.map_err(refuse)?, "scroll")
         }
-        Op::Type { text, into } => type_text(bus, window, into, text).await,
+        Op::Type { text, into } => match type_text(bus, window, into, text).await? {
+            Typed::Done => Ok(()),
+            Typed::NoTarget => Err(Error::Unsupported(NO_TARGET.into())),
+            Typed::Ignored { .. } => Err(Error::Failed(IGNORED.into())),
+        },
         Op::Menu(path) => menu(bus, window, path).await,
         // Apps Hush started already run on its display.
         Op::Lane if in_lane => Ok(()),
@@ -111,32 +119,57 @@ async fn set_value(bus: &Bus, element: &Element, value: &str) -> Result<()> {
     bus.set_number(element, number).await.map_err(refuse)
 }
 
-async fn type_text(bus: &Bus, window: &Element, into: Option<&Element>, text: &str) -> Result<()> {
+/// What typing through AT-SPI did.
+pub(crate) enum Typed {
+    Done,
+    /// No ref given, and nothing editable has focus.
+    NoTarget,
+    /// The app said yes but its text didn't change (Firefox's address bar
+    /// does this); `focused` when the field had the keyboard focus, so key
+    /// presses would land in it.
+    Ignored {
+        focused: bool,
+    },
+}
+
+pub(crate) async fn type_text(
+    bus: &Bus,
+    window: &Element,
+    into: Option<&Element>,
+    text: &str,
+) -> Result<Typed> {
     let target = match into {
         Some(element) => element.clone(),
-        None => focused_editable(bus, window).await?.ok_or_else(|| {
-            Error::Unsupported("nothing editable has focus in this window; give type a ref".into())
-        })?,
+        None => match focused_editable(bus, window).await? {
+            Some(element) => element,
+            None => return Ok(Typed::NoTarget),
+        },
     };
+    let (states, count) = futures_util::join!(bus.states(&target), bus.character_count(&target));
+    let focused = states.is_ok_and(|s| s.has(state::FOCUSED));
+    let count = count.map_err(refuse)?;
     // At the caret only where the user would type: in the focused field.
     // An unfocused field's caret sits at 0, and text typed into a field by
     // ref is meant to go after what is there.
-    let focused = bus
-        .states(&target)
-        .await
-        .is_ok_and(|s| s.has(state::FOCUSED));
     let caret = match focused {
         true => bus.caret(&target).await.ok().flatten(),
         false => None,
     };
-    let at = match caret {
-        Some(caret) => caret,
-        None => bus.character_count(&target).await.map_err(refuse)?,
-    };
     refused(
-        bus.insert_text(&target, at, text).await.map_err(refuse)?,
+        bus.insert_text(&target, caret.unwrap_or(count), text)
+            .await
+            .map_err(refuse)?,
         "insert the text",
-    )
+    )?;
+    let changed = match bus.character_count(&target).await {
+        Ok(after) => after != count,
+        // Can't tell; the app said it inserted the text.
+        Err(_) => true,
+    };
+    Ok(match changed || text.is_empty() {
+        true => Typed::Done,
+        false => Typed::Ignored { focused },
+    })
 }
 
 async fn select(bus: &Bus, element: &Element) -> Result<()> {

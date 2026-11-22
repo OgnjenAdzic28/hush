@@ -10,6 +10,7 @@ use hush_core::{
 
 use zbus::block_on;
 
+use crate::act::Typed;
 use crate::bus::{Bus, Element};
 use crate::input::Sender;
 use crate::lane::Lane;
@@ -253,6 +254,18 @@ impl Platform for LinuxPlatform {
             } if in_lane => self.send(window, |input| input.click((x, y), button, count)),
             Op::Scroll { x, y, dx, dy } if in_lane => {
                 self.send(window, |input| input.scroll((x, y), dx, dy))
+            }
+            // Through AT-SPI first, which is exact; key presses when the
+            // app ignores that, or nothing editable says it has focus (a
+            // terminal, a canvas, a Qt field) and they go where it's typing.
+            Op::Type { text, into } if in_lane => {
+                match block_on(act::type_text(&bus, &element, into, text))? {
+                    Typed::Done => Ok(()),
+                    Typed::NoTarget | Typed::Ignored { focused: true } => {
+                        self.send(window, |input| input.text(text))
+                    }
+                    Typed::Ignored { focused: false } => Err(Error::Failed(act::IGNORED.into())),
+                }
             }
             op => block_on(act::perform(&bus, &element, in_lane, op)),
         }
