@@ -48,53 +48,133 @@ impl StateSet {
     }
 }
 
-/// `role` is the unlocalized name `GetRoleName` returns, like "push button".
-pub(crate) fn map(role: &str, states: StateSet) -> Mapped {
+/// `AtspiRole` numbers, as `GetRole` returns them. The role *name*
+/// (`GetRoleName`) isn't reliable: GTK 4 names its windows "application".
+pub(crate) mod role {
+    pub const ACCELERATOR_LABEL: u32 = 1;
+    pub const ALERT: u32 = 2;
+    pub const CANVAS: u32 = 6;
+    pub const CHECK_BOX: u32 = 7;
+    pub const CHECK_MENU_ITEM: u32 = 8;
+    pub const COLOR_CHOOSER: u32 = 9;
+    pub const COLUMN_HEADER: u32 = 10;
+    pub const COMBO_BOX: u32 = 11;
+    pub const DIAL: u32 = 15;
+    pub const DIALOG: u32 = 16;
+    pub const FILE_CHOOSER: u32 = 19;
+    pub const FILLER: u32 = 20;
+    pub const FONT_CHOOSER: u32 = 22;
+    pub const FRAME: u32 = 23;
+    pub const GLASS_PANE: u32 = 24;
+    pub const HTML_CONTAINER: u32 = 25;
+    pub const ICON: u32 = 26;
+    pub const IMAGE: u32 = 27;
+    pub const INTERNAL_FRAME: u32 = 28;
+    pub const LABEL: u32 = 29;
+    pub const LAYERED_PANE: u32 = 30;
+    pub const LIST: u32 = 31;
+    pub const LIST_ITEM: u32 = 32;
+    pub const MENU: u32 = 33;
+    pub const MENU_BAR: u32 = 34;
+    pub const MENU_ITEM: u32 = 35;
+    pub const PAGE_TAB: u32 = 37;
+    pub const PAGE_TAB_LIST: u32 = 38;
+    pub const PANEL: u32 = 39;
+    pub const PASSWORD_TEXT: u32 = 40;
+    pub const POPUP_MENU: u32 = 41;
+    pub const PROGRESS_BAR: u32 = 42;
+    pub const PUSH_BUTTON: u32 = 43;
+    pub const RADIO_BUTTON: u32 = 44;
+    pub const RADIO_MENU_ITEM: u32 = 45;
+    pub const ROOT_PANE: u32 = 46;
+    pub const SCROLL_BAR: u32 = 48;
+    pub const SCROLL_PANE: u32 = 49;
+    pub const SEPARATOR: u32 = 50;
+    pub const SLIDER: u32 = 51;
+    pub const SPIN_BUTTON: u32 = 52;
+    pub const SPLIT_PANE: u32 = 53;
+    pub const TABLE: u32 = 55;
+    pub const TABLE_CELL: u32 = 56;
+    pub const TABLE_COLUMN_HEADER: u32 = 57;
+    pub const TEAROFF_MENU_ITEM: u32 = 59;
+    pub const TEXT: u32 = 61;
+    pub const TOGGLE_BUTTON: u32 = 62;
+    pub const TOOL_BAR: u32 = 63;
+    pub const TOOL_TIP: u32 = 64;
+    pub const TREE: u32 = 65;
+    pub const TREE_TABLE: u32 = 66;
+    pub const VIEWPORT: u32 = 68;
+    pub const WINDOW: u32 = 69;
+    pub const PARAGRAPH: u32 = 73;
+    pub const RULER: u32 = 74;
+    pub const APPLICATION: u32 = 75;
+    pub const ENTRY: u32 = 79;
+    pub const CAPTION: u32 = 81;
+    pub const DOCUMENT_FRAME: u32 = 82;
+    pub const HEADING: u32 = 83;
+    pub const SECTION: u32 = 85;
+    pub const REDUNDANT_OBJECT: u32 = 86;
+    pub const FORM: u32 = 87;
+    pub const LINK: u32 = 88;
+    pub const TABLE_ROW: u32 = 90;
+    pub const TREE_ITEM: u32 = 91;
+    pub const DOCUMENT_WEB: u32 = 95;
+    pub const LIST_BOX: u32 = 98;
+    pub const GROUPING: u32 = 99;
+    pub const IMAGE_MAP: u32 = 100;
+    pub const LEVEL_BAR: u32 = 103;
+    pub const LANDMARK: u32 = 110;
+    pub const STATIC: u32 = 116;
+    pub const PUSH_BUTTON_MENU: u32 = 129;
+    pub const SWITCH: u32 = 130;
+}
+
+pub(crate) fn map(atspi_role: u32, states: StateSet) -> Mapped {
     use Role::*;
-    let mapped = match role {
-        "frame" | "window" => Window,
-        "dialog" | "alert" | "file chooser" | "color chooser" | "font chooser" => Dialog,
-        "push button" | "push button menu" => Button,
-        "toggle button" => Button,
-        "link" => Link,
-        "check box" => CheckBox,
-        "radio button" => Radio,
-        "switch" => Switch,
-        "password text" => SecureField,
-        "entry" => TextField,
-        "text" if states.has(state::EDITABLE) => {
+    use role::*;
+    let mapped = match atspi_role {
+        FRAME | WINDOW => Window,
+        DIALOG | ALERT | FILE_CHOOSER | COLOR_CHOOSER | FONT_CHOOSER => Dialog,
+        PUSH_BUTTON | PUSH_BUTTON_MENU | TOGGLE_BUTTON => Button,
+        LINK => Link,
+        CHECK_BOX => CheckBox,
+        RADIO_BUTTON => Radio,
+        SWITCH => Switch,
+        PASSWORD_TEXT => SecureField,
+        ENTRY => TextField,
+        TEXT if states.has(state::EDITABLE) => {
             if states.has(state::MULTI_LINE) {
                 TextArea
             } else {
                 TextField
             }
         }
-        "text" | "label" | "static" | "caption" | "paragraph" | "accelerator label" => Text,
-        "combo box" => ComboBox,
-        "spin button" => Stepper,
-        "slider" | "dial" => Slider,
-        "menu bar" => MenuBar,
-        "menu" | "popup menu" => Menu,
-        "menu item" | "check menu item" | "radio menu item" | "tearoff menu item" => MenuItem,
-        "page tab list" => TabGroup,
-        "page tab" => Tab,
-        "tool bar" => Toolbar,
-        "list" | "list box" => List,
-        "table" | "tree table" => Table,
-        "tree" => Outline,
-        "list item" | "table row" | "tree item" => Row,
-        "table cell" => Cell,
-        "column header" | "table column header" => Column,
-        "scroll pane" | "viewport" => ScrollArea,
-        "document web" | "document frame" | "html container" => WebArea,
-        "heading" => Heading,
-        "image" | "icon" | "image map" | "canvas" => Image,
-        "progress bar" | "level bar" => Progress,
-        "scroll bar" | "separator" | "tool tip" | "ruler" | "glass pane" | "redundant object" => {
+        TEXT | LABEL | STATIC | CAPTION | PARAGRAPH | ACCELERATOR_LABEL => Text,
+        COMBO_BOX => ComboBox,
+        SPIN_BUTTON => Stepper,
+        SLIDER | DIAL => Slider,
+        MENU_BAR => MenuBar,
+        MENU | POPUP_MENU => Menu,
+        MENU_ITEM | CHECK_MENU_ITEM | RADIO_MENU_ITEM | TEAROFF_MENU_ITEM => MenuItem,
+        PAGE_TAB_LIST => TabGroup,
+        PAGE_TAB => Tab,
+        TOOL_BAR => Toolbar,
+        LIST | LIST_BOX => List,
+        TABLE | TREE_TABLE => Table,
+        TREE => Outline,
+        LIST_ITEM | TABLE_ROW | TREE_ITEM => Row,
+        TABLE_CELL => Cell,
+        COLUMN_HEADER | TABLE_COLUMN_HEADER => Column,
+        SCROLL_PANE | VIEWPORT => ScrollArea,
+        DOCUMENT_WEB | DOCUMENT_FRAME | HTML_CONTAINER => WebArea,
+        HEADING => Heading,
+        IMAGE | ICON | IMAGE_MAP | CANVAS => Image,
+        PROGRESS_BAR | LEVEL_BAR => Progress,
+        SCROLL_BAR | SEPARATOR | TOOL_TIP | RULER | GLASS_PANE | REDUNDANT_OBJECT => {
             return Mapped::Skip;
         }
-        "filler" | "panel" | "grouping" | "section" | "form" | "landmark" | "split pane"
-        | "layered pane" | "root pane" | "internal frame" | "application" => Group,
+        FILLER | PANEL | GROUPING | SECTION | FORM | LANDMARK | SPLIT_PANE | LAYERED_PANE
+        | ROOT_PANE | INTERNAL_FRAME | APPLICATION => Group,
         _ => Other,
     };
     Mapped::Role(mapped)
@@ -163,21 +243,21 @@ mod tests {
 
     #[test]
     fn text_is_an_input_only_when_editable() {
-        assert_eq!(map("text", set(&[])), Mapped::Role(Role::Text));
+        assert_eq!(map(role::TEXT, set(&[])), Mapped::Role(Role::Text));
         assert_eq!(
-            map("text", set(&[state::EDITABLE])),
+            map(role::TEXT, set(&[state::EDITABLE])),
             Mapped::Role(Role::TextField)
         );
         assert_eq!(
-            map("text", set(&[state::EDITABLE, state::MULTI_LINE])),
+            map(role::TEXT, set(&[state::EDITABLE, state::MULTI_LINE])),
             Mapped::Role(Role::TextArea)
         );
     }
 
     #[test]
     fn chrome_is_skipped_and_unknown_roles_are_other() {
-        assert_eq!(map("scroll bar", set(&[])), Mapped::Skip);
-        assert_eq!(map("something new", set(&[])), Mapped::Role(Role::Other));
+        assert_eq!(map(role::SCROLL_BAR, set(&[])), Mapped::Skip);
+        assert_eq!(map(1000, set(&[])), Mapped::Role(Role::Other));
     }
 
     #[test]

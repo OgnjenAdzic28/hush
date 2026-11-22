@@ -110,7 +110,7 @@ async fn read_one(
         bus.frame(element, Coords::Window),
     );
     let set = set?;
-    let role = match roles::map(&role_name?, set) {
+    let role = match roles::map(role_name?, set) {
         Mapped::Role(role) => role,
         Mapped::Skip if !root => return Ok(None),
         Mapped::Skip => Role::Window,

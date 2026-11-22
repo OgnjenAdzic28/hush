@@ -166,9 +166,9 @@ impl Bus {
             .collect())
     }
 
-    /// The unlocalized role name, like "push button".
-    pub(crate) async fn role(&self, element: &Element) -> Reply<String> {
-        self.call(element, ACCESSIBLE, "GetRoleName", &()).await
+    /// The `AtspiRole` number (see `roles::role`).
+    pub(crate) async fn role(&self, element: &Element) -> Reply<u32> {
+        self.call(element, ACCESSIBLE, "GetRole", &()).await
     }
 
     pub(crate) async fn states(&self, element: &Element) -> Reply<StateSet> {

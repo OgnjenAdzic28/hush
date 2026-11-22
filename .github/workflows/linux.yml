@@ -44,14 +44,13 @@ jobs:
             gtk-3-examples gnome-calculator featherpad libxcb-cursor0
       - name: Diagnose Qt (temporary)
         run: |
+          sudo apt-get install -y --no-install-recommends python3-pyatspi
           xvfb-run -a dbus-run-session -- bash -c '
             dbus-send --session --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true
-            QT_DEBUG_PLUGINS=0 featherpad > /tmp/fp.log 2>&1 &
+            QT_ACCESSIBILITY=1 QT_LOGGING_RULES="qt.accessibility*=true" featherpad > /tmp/fp.log 2>&1 &
             sleep 6
-            ps aux | grep -i [f]eather || echo "featherpad not running"
-            cat /tmp/fp.log | head -20
-            ldd $(which featherpad) | grep -i qt | head -5
-            busctl --user list 2>/dev/null | head -20' || true
+            head -30 /tmp/fp.log
+            python3 -c "import pyatspi; d=pyatspi.Registry.getDesktop(0); print([(a.name, a.get_process_id()) for a in d if a])"' || true
       - run: cargo build --release -p hush-linux --tests
       - name: Read real apps
         run: xvfb-run -a dbus-run-session -- cargo test --release -p hush-linux -- --ignored --test-threads=1 --nocapture
