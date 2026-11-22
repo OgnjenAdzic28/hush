@@ -10,6 +10,7 @@
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -75,7 +76,12 @@ pub(crate) fn start(screen: Arc<Screen>, window: Window, size: (u32, u32)) -> Re
     let (first, width, height) = grab(&screen, window, size)?;
     let id = NEXT.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir().join(format!("hush-recording-{}-{id}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(failed)?;
+    // New and private: the temp folder is shared with other users, who
+    // must neither read the frames nor plant a folder or link there first.
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(failed)?;
     let path = dir.join("0.jpg");
     std::fs::write(&path, first).map_err(failed)?;
     let stop = Arc::new(AtomicBool::new(false));
