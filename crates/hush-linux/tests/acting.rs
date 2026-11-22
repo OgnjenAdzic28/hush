@@ -77,14 +77,24 @@ fn presses_calculator_buttons_and_settles_on_events() {
     let outline = engine
         .observe("gnome-calculator", ObserveOptions::default())
         .unwrap();
-    let seven = ref_of(&outline, "button", Some("7"));
-    let eight = ref_of(&outline, "button", Some("8"));
-    let out = act(
-        &mut engine,
-        "gnome-calculator",
-        &[&format!("click {seven}"), &format!("click {eight}")],
+    let mut out = String::new();
+    for digit in ["7", "8", "9"] {
+        let r = ref_of(&outline, "button", Some(digit));
+        out = act(&mut engine, "gnome-calculator", &[&format!("click {r}")]);
+    }
+    let display = engine
+        .observe(
+            "gnome-calculator",
+            ObserveOptions {
+                full: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(
+        display.contains("789"),
+        "the display didn't show 789:\n{display}"
     );
-    assert!(out.contains("78"), "the display didn't show 78");
     assert!(out.contains("settled"), "the app never settled on events");
 }
 
@@ -142,11 +152,14 @@ fn refuses_keys_and_focus_for_apps_on_the_users_display() {
     let outline = engine
         .observe("gtk3-widget-factory", ObserveOptions::default())
         .unwrap();
-    let steps = vec!["key ctrl+a".to_string()];
-    let error = engine.act("gtk3-widget-factory", None, &steps).unwrap_err();
-    assert!(error.to_string().contains("own display"), "{error}");
+    // A refused step stops the batch and says why; the call itself succeeds.
+    let out = act(&mut engine, "gtk3-widget-factory", &["key ctrl+a"]);
+    assert!(out.contains("own display"), "{out}");
     let field = ref_of(&outline, "field", None);
-    let steps = vec![format!("focus {field}")];
-    let error = engine.act("gtk3-widget-factory", None, &steps).unwrap_err();
-    assert!(error.to_string().contains("take your focus"), "{error}");
+    let out = act(
+        &mut engine,
+        "gtk3-widget-factory",
+        &[&format!("focus {field}")],
+    );
+    assert!(out.contains("take your focus"), "{out}");
 }

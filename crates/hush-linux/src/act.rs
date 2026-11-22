@@ -106,9 +106,20 @@ async fn type_text(bus: &Bus, window: &Element, into: Option<&Element>, text: &s
             Error::Unsupported("nothing editable has focus in this window; give type a ref".into())
         })?,
     };
-    let at = match bus.caret(&target).await {
-        Ok(Some(caret)) => caret,
-        _ => bus.character_count(&target).await.map_err(refuse)?,
+    // At the caret only where the user would type: in the focused field.
+    // An unfocused field's caret sits at 0, and text typed into a field by
+    // ref is meant to go after what is there.
+    let focused = bus
+        .states(&target)
+        .await
+        .is_ok_and(|s| s.has(state::FOCUSED));
+    let caret = match focused {
+        true => bus.caret(&target).await.ok().flatten(),
+        false => None,
+    };
+    let at = match caret {
+        Some(caret) => caret,
+        None => bus.character_count(&target).await.map_err(refuse)?,
     };
     refused(
         bus.insert_text(&target, at, text).await.map_err(refuse)?,

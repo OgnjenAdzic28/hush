@@ -5,6 +5,12 @@
 //! bumps a counter for the app that sent it. Toolkits built on ATK only emit
 //! the events some client has registered for, so the watcher registers for
 //! all of them first.
+//!
+//! Elements that change on their own all the time (spinners, pulsing
+//! progress bars, clocks) would keep an app from ever looking settled, so an
+//! element that has sent events in three of the last four seconds stops
+//! counting until it goes quiet. A change a step causes is a burst well
+//! under that.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -26,6 +32,35 @@ const INTERFACES: [&str; 4] = [
 ];
 
 type Counts = Arc<Mutex<HashMap<String, Activity>>>;
+
+/// Seconds (since the watch started) in which one element sent events: its
+/// last four distinct ones, newest last.
+#[derive(Default)]
+struct Recent {
+    seconds: [u64; 4],
+    len: usize,
+}
+
+impl Recent {
+    /// Notes an event in `second` and says whether the element is noise.
+    fn noisy(&mut self, second: u64) -> bool {
+        if self.len == 0 || self.seconds[(self.len - 1).min(3)] != second {
+            if self.len == 4 {
+                self.seconds.rotate_left(1);
+                self.seconds[3] = second;
+            } else {
+                self.seconds[self.len] = second;
+                self.len += 1;
+            }
+        }
+        let window = second.saturating_sub(3);
+        self.seconds[..self.len]
+            .iter()
+            .filter(|s| **s >= window)
+            .count()
+            >= 3
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct Watch {
@@ -77,6 +112,8 @@ impl Watch {
 }
 
 async fn count(mut stream: MessageStream, counts: Counts) {
+    let started = Instant::now();
+    let mut recent: HashMap<(String, String), Recent> = HashMap::new();
     while let Some(message) = stream.next().await {
         let Ok(message) = message else { continue };
         if message.message_type() != MessageType::Signal {
@@ -87,6 +124,18 @@ async fn count(mut stream: MessageStream, counts: Counts) {
             .interface()
             .is_some_and(|i| i.as_str().starts_with("org.a11y.atspi.Event."));
         if let (true, Some(sender)) = (is_event, header.sender()) {
+            let second = started.elapsed().as_secs();
+            let path = header.path().map(|p| p.to_string()).unwrap_or_default();
+            if recent.len() > 10_000 {
+                recent.retain(|_, r| r.len > 0 && second - r.seconds[r.len - 1] < 10);
+            }
+            if recent
+                .entry((sender.to_string(), path))
+                .or_default()
+                .noisy(second)
+            {
+                continue;
+            }
             let mut counts = lock(&counts);
             let activity = counts.entry(sender.to_string()).or_default();
             activity.events += 1;
@@ -97,4 +146,24 @@ async fn count(mut stream: MessageStream, counts: Counts) {
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Recent;
+
+    #[test]
+    fn a_burst_counts_and_a_steady_source_is_noise() {
+        let mut burst = Recent::default();
+        assert!(!burst.noisy(5));
+        assert!(!burst.noisy(5));
+        assert!(!burst.noisy(6));
+        let mut steady = Recent::default();
+        assert!(!steady.noisy(1));
+        assert!(!steady.noisy(2));
+        assert!(steady.noisy(3));
+        assert!(steady.noisy(4));
+        // Quiet for a while, then a fresh burst counts again.
+        assert!(!steady.noisy(20));
+    }
 }
