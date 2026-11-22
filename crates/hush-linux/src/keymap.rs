@@ -2,6 +2,8 @@
 //! codes to put a character on when no key types it.
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::sync::{Mutex, PoisonError};
 
 use hush_core::{Error, Key, NamedKey, Result};
 use x11rb::connection::Connection;
@@ -45,7 +47,8 @@ pub(crate) struct Keymap {
     first: Keycode,
     per_code: usize,
     syms: RefCell<Vec<u32>>,
-    /// Key codes with no keysym, taken in turn for characters no key types.
+    /// Key codes free for characters no key types: empty ones first, then
+    /// ones this host gave a character before, least recently first.
     spare: Vec<Keycode>,
     next_spare: std::cell::Cell<usize>,
 }
@@ -60,9 +63,12 @@ impl Keymap {
             .reply()
             .map_err(x)?;
         let per_code = usize::from(reply.keysyms_per_keycode);
-        let spare = spare(&reply.keysyms, per_code)
+        let given = given().clone();
+        let mut spare: Vec<Keycode> = spare(&reply.keysyms, per_code)
             .map(|i| first + i as u8)
+            .filter(|code| !given.contains(code))
             .collect();
+        spare.extend(given);
         Ok(Keymap {
             first,
             per_code,
@@ -79,8 +85,10 @@ impl Keymap {
     }
 
     /// A key code that types `sym`: its own key, or else a spare one given
-    /// `sym` for now (as xdotool does). The server tells every client of the
-    /// change before the key's next press, so the app reads it as `sym`.
+    /// `sym` (as xdotool does). The server tells every client of the change
+    /// before the key's next press. A spare key keeps its character after
+    /// typing: toolkits reload the map when they handle the press, which
+    /// may be later, and must still find `sym` there.
     pub(crate) fn typing(&self, c: &RustConnection, sym: u32) -> Result<(Keycode, bool)> {
         if let Some(found) = self.find(sym) {
             return Ok(found);
@@ -93,6 +101,10 @@ impl Keymap {
                 Error::Unsupported("Hush's display has no spare key to type that character".into())
             })?;
         self.next_spare.set(turn + 1);
+        let mut given = given();
+        given.retain(|c| *c != code);
+        given.push_back(code);
+        drop(given);
         let row = vec![sym; self.per_code];
         c.change_keyboard_mapping(1, code, self.per_code as u8, &row)
             .map_err(x)?;
@@ -100,21 +112,12 @@ impl Keymap {
         self.syms.borrow_mut()[at..at + self.per_code].copy_from_slice(&row);
         Ok((code, false))
     }
+}
 
-    /// Empties the spare keys `typing` used, so the next typing finds them
-    /// spare again. Safe right after the presses: the app reads them in
-    /// order, before it hears of this change.
-    pub(crate) fn release(&self, c: &RustConnection) -> Result<()> {
-        let used = self.next_spare.replace(0).min(self.spare.len());
-        let empty = vec![0; self.per_code];
-        for &code in &self.spare[..used] {
-            c.change_keyboard_mapping(1, code, self.per_code as u8, &empty)
-                .map_err(x)?;
-            let at = usize::from(code - self.first) * self.per_code;
-            self.syms.borrow_mut()[at..at + self.per_code].copy_from_slice(&empty);
-        }
-        Ok(())
-    }
+/// Spare key codes this host has given a character, least recently first.
+fn given() -> std::sync::MutexGuard<'static, VecDeque<Keycode>> {
+    static GIVEN: Mutex<VecDeque<Keycode>> = Mutex::new(VecDeque::new());
+    GIVEN.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// Indexes of keys with no keysym at all.

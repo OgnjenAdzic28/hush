@@ -126,12 +126,6 @@ impl<'a> Sender<'a> {
 
     /// Types `text` as key presses into whatever has the keyboard focus.
     pub(crate) fn text(&self, text: &str) -> Result<()> {
-        let typed = self.type_keys(text);
-        let released = self.keys.release(self.connection);
-        typed.and(released).and_then(|()| self.flush())
-    }
-
-    fn type_keys(&self, text: &str) -> Result<()> {
         let (shift, _) = self.keys.find(SHIFT_L).ok_or_else(|| x("no shift key"))?;
         for c in text.chars() {
             let sym = match c {
@@ -146,7 +140,7 @@ impl<'a> Sender<'a> {
                 self.press(&[code])?;
             }
         }
-        Ok(())
+        self.flush()
     }
 
     pub(crate) fn combo(&self, combo: KeyCombo, repeat: u16) -> Result<()> {
