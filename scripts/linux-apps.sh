@@ -14,13 +14,31 @@ out=${RUNNER_TEMP:-/tmp}/hush-apps
 mkdir -p "$out"
 failed=()
 
+# Every command has a deadline. One that misses it is a bug in Hush, so the
+# host's threads are dumped to show where it stuck.
+h() {
+  local code=0
+  timeout 60 "$hush" "$@" || code=$?
+  if ((code == 124)); then
+    echo "--- hush $* took over 60 s; the host's threads:"
+    if command -v gdb >/dev/null; then
+      sudo gdb -p "$(pgrep -xo hush)" -batch -ex "thread apply all bt" 2>&1 | grep -E '^(Thread|#)' | head -150
+    fi
+  fi
+  return $code
+}
+
 # Polls observe until TEXT shows. Apps answer in their own time (LibreOffice
 # and Firefox take seconds to start), so this waits on what the app shows
 # with a deadline, 0.2 s between looks.
 shows() {
   local app=$1 text=$2 seconds=$3
-  for _ in $(seq $((seconds * 5))); do
-    if "$hush" observe "$app" --full >"$out/last.txt" 2>&1 && grep -q -- "$text" "$out/last.txt"; then
+  local end=$((SECONDS + seconds)) code
+  while ((SECONDS < end)); do
+    code=0
+    h observe "$app" --full >"$out/last.txt" 2>&1 || code=$?
+    ((code == 124)) && { cat "$out/last.txt"; return 1; }
+    if ((code == 0)) && grep -q -- "$text" "$out/last.txt"; then
       return 0
     fi
     sleep 0.2
@@ -34,10 +52,14 @@ shows() {
 # line, not only a note ("# no window yet").
 opened() {
   local app=$1 seconds=$2
-  "$hush" observe "$app" | tee "$out/$app-first.txt" || return 1
-  for _ in $(seq $((seconds * 5))); do
-    if "$hush" observe "$app" --full >"$out/last.txt" 2>&1 && grep -qv '^#' "$out/last.txt"; then
-      cat "$out/last.txt" | head -40
+  h observe "$app" | tee "$out/$app-first.txt" || return 1
+  local end=$((SECONDS + seconds)) code
+  while ((SECONDS < end)); do
+    code=0
+    h observe "$app" --full >"$out/last.txt" 2>&1 || code=$?
+    ((code == 124)) && { cat "$out/last.txt"; return 1; }
+    if ((code == 0)) && grep -qv '^#' "$out/last.txt"; then
+      head -60 "$out/last.txt"
       return 0
     fi
     sleep 0.2
@@ -49,14 +71,16 @@ opened() {
 
 typed() {
   local app=$1 seconds=$2
+  # Type into the first text area, by its ref, as an agent would.
   opened "$app" "$seconds" &&
-    "$hush" act "$app" "type hello from hush" &&
+    ref=$(grep -m1 -oE '\b[t][0-9]+ (textarea|textfield|document)' "$out/last.txt" | cut -d' ' -f1) &&
+    h act "$app" "type $ref hello from hush" &&
     shows "$app" "hello from hush" 10
 }
 
 pictured() {
   local app=$1 name=$2
-  "$hush" see "$app" --out "$out/$name.jpg" && test -s "$out/$name.jpg"
+  h see "$app" --out "$out/$name.jpg" && test -s "$out/$name.jpg"
 }
 
 run() {
@@ -76,7 +100,7 @@ run() {
 
 check_calculator() {
   opened Calculator 20 &&
-    "$hush" act Calculator "key 4" "key 2" &&
+    h act Calculator "key 4" "key 2" &&
     shows Calculator '\b42\b' 10 &&
     pictured Calculator calculator
 }
@@ -91,8 +115,8 @@ check_firefox() {
 for app in "$@"; do
   run "$app"
 done
-"$hush" apps
-if "$hush" apps | grep -q "front"; then
+h apps
+if h apps | grep -q "front"; then
   echo "FAIL an app on Hush's display is listed as the front app"
   failed+=(front)
 fi
