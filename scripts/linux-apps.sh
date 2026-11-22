@@ -128,7 +128,16 @@ check_firefox() {
 # Chromium's family, the same way: load a page and read its heading.
 check_chrome() {
   if ! opened "Google Chrome" 60; then
-    ps -eo pid,args | grep "[c]hrome" | cut -c1-160 | head -8
+    for pid in $(pgrep -x chrome); do
+      echo "$pid DISPLAY=$(tr '\0' '\n' <"/proc/$pid/environ" | grep -E '^(DISPLAY|ACCESSIBILITY_ENABLED)=' | tr '\n' ' ')"
+    done
+    display=$(cat "${XDG_RUNTIME_DIR:-/tmp/hush-$(id -u)}/hush/lane-display")
+    echo "--- a second Chrome with logs:"
+    DISPLAY=:$display ACCESSIBILITY_ENABLED=1 timeout 15 google-chrome --user-data-dir="$out/chrome2" \
+      --no-first-run --enable-logging=stderr --v=1 2>&1 | grep -iE "atk|atspi|accessib|bridge" | head -20 &
+    sleep 10 # Diagnostics only: let it start.
+    python3 scripts/atspi-tree.py chrome 2 || true
+    wait || true
     return 1
   fi
   pictured "Google Chrome" chrome-start || return 1

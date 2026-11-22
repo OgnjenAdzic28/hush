@@ -310,8 +310,10 @@ impl Platform for LinuxPlatform {
         // Already running but not yet on the accessibility bus. A second
         // copy would hand off to a single-instance app and open a window on
         // the person's desktop, so don't start one.
-        match apps::processes_of(app).first() {
-            Some(pid) if lane.holds(*pid) => Ok(()),
+        let running = apps::processes_of(app);
+        // Any one of them: a browser's helper processes may drop DISPLAY.
+        match running.first() {
+            Some(_) if running.iter().any(|pid| lane.holds(*pid)) => Ok(()),
             Some(_) => Err(Error::Failed(format!(
                 "{} is running on your desktop but hasn't shown up to accessibility yet; look again in a moment",
                 app.name

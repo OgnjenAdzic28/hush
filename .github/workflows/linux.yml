@@ -104,7 +104,7 @@ jobs:
             xvfb dbus dbus-x11 at-spi2-core fontconfig fonts-dejavu-core \
             gnome-calculator mousepad gnome-text-editor \
             libreoffice-writer libreoffice-gtk3 featherpad \
-            firefox gdb
+            firefox gdb python3-pyatspi
       - name: Skip Firefox's first-run pages, as on a browser someone already uses
         run: |
           sudo install -d /etc/firefox/policies
