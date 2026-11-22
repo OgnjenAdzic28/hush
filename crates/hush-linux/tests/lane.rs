@@ -170,3 +170,56 @@ fn keys_and_pointer_clicks_reach_an_app_on_hushs_display() {
         "the timeline didn't type 56:\n{shown}"
     );
 }
+
+#[test]
+#[ignore]
+fn records_an_app_on_hushs_display_with_the_agent_cursor() {
+    let mut engine = Engine::new(LinuxPlatform::new());
+    let outline = engine
+        .observe("Calculator", ObserveOptions::default())
+        .unwrap();
+    let app = engine
+        .platform()
+        .apps(Some("Calculator"))
+        .unwrap()
+        .into_iter()
+        .find(|a| a.pid.is_some())
+        .expect("Calculator is running");
+    let _started = Started(app.pid.unwrap());
+    let button = |digit: &str| {
+        outline
+            .lines()
+            .map(str::trim)
+            .find(|l| l.contains(&format!("button \"{digit}\"")))
+            .and_then(|l| l.split(' ').next())
+            .unwrap_or_else(|| panic!("no {digit} button in\n{outline}"))
+            .to_owned()
+    };
+
+    println!("{}", engine.record_start("Calculator", None).unwrap());
+    for digit in ["4", "2"] {
+        let steps = vec![format!("click {}", button(digit))];
+        println!("{}", engine.act("Calculator", None, &steps).unwrap());
+    }
+    let out = std::env::temp_dir().join("hush-linux-recording.mp4");
+    let wrote = engine
+        .record_stop(Some("Claude"), Some(&out.to_string_lossy()))
+        .unwrap();
+    println!("{wrote}");
+    let probe = std::process::Command::new("ffprobe")
+        .args(["-v", "error", "-count_frames", "-select_streams", "v:0"])
+        .args([
+            "-show_entries",
+            "stream=codec_name,nb_read_frames,width,height",
+        ])
+        .args(["-of", "csv=p=0"])
+        .arg(&out)
+        .output()
+        .unwrap();
+    let probe = String::from_utf8_lossy(&probe.stdout);
+    println!("ffprobe: {probe}");
+    let fields: Vec<&str> = probe.trim().split(',').collect();
+    assert_eq!(fields.first(), Some(&"h264"), "{probe}");
+    let frames: u32 = fields.last().unwrap().parse().unwrap();
+    assert!(frames >= 5, "only {frames} frames");
+}

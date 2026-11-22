@@ -9,6 +9,8 @@ mod apps;
 #[cfg(target_os = "linux")]
 mod bus;
 #[cfg(target_os = "linux")]
+mod cursor_art;
+#[cfg(target_os = "linux")]
 mod input;
 #[cfg(target_os = "linux")]
 mod installed;
@@ -18,6 +20,8 @@ mod lane;
 mod platform;
 #[cfg(target_os = "linux")]
 mod read;
+#[cfg(target_os = "linux")]
+mod record;
 #[cfg(any(target_os = "linux", test))]
 mod roles;
 #[cfg(target_os = "linux")]
