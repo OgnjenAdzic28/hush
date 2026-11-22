@@ -80,7 +80,7 @@ fn presses_calculator_buttons_and_settles_on_events() {
     let mut out = String::new();
     for digit in ["7", "8", "9"] {
         let r = ref_of(&outline, "button", Some(digit));
-        out = act(&mut engine, "gnome-calculator", &[&format!("click {r}")]);
+        out += &act(&mut engine, "gnome-calculator", &[&format!("click {r}")]);
     }
     // GNOME Calculator works the result out in the background and updates
     // its display about 250 ms after a press, so the last press can land
@@ -105,7 +105,10 @@ fn presses_calculator_buttons_and_settles_on_events() {
         display.contains("789"),
         "the display didn't show 789:\n{display}"
     );
-    assert!(out.contains("settled"), "the app never settled on events");
+    assert!(
+        out.contains("settled"),
+        "no press settled on events:\n{out}"
+    );
 }
 
 #[test]
