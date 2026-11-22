@@ -165,4 +165,9 @@ jobs:
             HUSH_DOWNLOAD_URL="file://$PWD/build/hush-linux-${{ matrix.arch }}.tar.gz" sh install.sh
           fi
       - name: Drive Calculator
-        run: xvfb-run -a dbus-run-session -- bash scripts/linux-apps.sh "$HOME/.local/bin/hush" calculator
+        run: |
+          xvfb-run -a dbus-run-session -- bash -c '
+            bash scripts/linux-apps.sh "$HOME/.local/bin/hush" calculator && exit 0
+            if command -v apt-get >/dev/null; then apt-get install -y -qq python3-pyatspi >/dev/null; fi
+            python3 scripts/atspi-tree.py calculator 6 || true
+            exit 1'
