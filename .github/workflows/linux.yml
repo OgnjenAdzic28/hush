@@ -79,9 +79,9 @@ jobs:
           retention-days: 7
 
   more-apps:
-    # The apps agents reach for: a GTK 3 and a GTK 4 editor, LibreOffice,
-    # a Qt app and Firefox, each started on Hush's display, read, typed into
-    # and pictured through the hush binary.
+    # The apps agents reach for: a GTK 3 and a GTK 4 editor, LibreOffice and
+    # Firefox, each started on Hush's display, read, typed into and pictured
+    # through the hush binary. Qt apps wait on #132.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -103,8 +103,7 @@ jobs:
             xvfb dbus dbus-x11 at-spi2-core fontconfig fonts-dejavu-core \
             gnome-calculator mousepad gnome-text-editor \
             libreoffice-writer libreoffice-gtk3 \
-            featherpad speedcrunch qt6-qpa-plugins qt5-gtk-platformtheme \
-            firefox gdb python3-pyatspi
+            firefox gdb
       - name: Skip Firefox's first-run pages, as on a browser someone already uses
         run: |
           sudo install -d /etc/firefox/policies
@@ -112,7 +111,7 @@ jobs:
             | sudo tee /etc/firefox/policies/policies.json
       - run: cargo build --release -p hush
       - name: Drive them through hush
-        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer qt qt2 firefox
+        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer firefox
       - name: Keep the pictures
         if: always()
         uses: actions/upload-artifact@v4

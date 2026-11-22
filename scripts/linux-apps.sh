@@ -5,7 +5,8 @@
 #
 #   xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush APP...
 #
-# APP is one of: calculator, gtk3, gtk4, writer, qt, qt2, firefox.
+# APP is one of: calculator, gtk3, gtk4, writer, qt, firefox. When an app
+# leaves something out, scripts/atspi-tree.py prints what it reports.
 set -euo pipefail
 
 hush=$1
@@ -106,27 +107,9 @@ check_calculator() {
 }
 check_gtk3() { typed Mousepad 20 && pictured Mousepad gtk3; }
 check_gtk4() { typed "Text Editor" 20 && pictured "Text Editor" gtk4; }
-check_writer() {
-  typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer && return 0
-  python3 scripts/atspi-tree.py soffice 14 | grep -v "menu item" | head -250
-  return 1
-}
-check_qt() {
-  # Watch both buses from before the app starts, to see whether Qt asks for
-  # the accessibility bus and registers on it.
-  a11y=$(dbus-send --session --print-reply=literal --dest=org.a11y.Bus /org/a11y/bus org.a11y.Bus.GetAddress | tr -d ' ')
-  timeout 40 dbus-monitor --session >"$out/qt-session.log" 2>&1 &
-  timeout 40 dbus-monitor --address "$a11y" >"$out/qt-a11y.log" 2>&1 &
-  sleep 1 # Diagnostics only: let the monitors attach.
-  typed FeatherPad 20 && pictured FeatherPad qt && return 0
-  ps -eo pid,args | grep -i [f]eatherpad || true
-  echo "--- session bus, about accessibility:"
-  grep -iE "a11y|atspi|GetAddress|IsEnabled|ScreenReader" "$out/qt-session.log" | head -20
-  echo "--- accessibility bus, Qt's calls:"
-  grep -E "Embed|Registry|method call" "$out/qt-a11y.log" | grep -v "sender=:1.0 " | head -30
-  return 1
-}
-check_qt2() { typed SpeedCrunch 20 && pictured SpeedCrunch qt2; }
+check_writer() { typed "LibreOffice Writer" 60 && pictured "LibreOffice Writer" writer; }
+# Qt apps don't register on the accessibility bus under Xvfb yet (#132).
+check_qt() { typed FeatherPad 20 && pictured FeatherPad qt; }
 # Loads a page and reads its text back.
 check_firefox() {
   opened Firefox 60 && pictured Firefox firefox-start || return 1
@@ -134,9 +117,8 @@ check_firefox() {
   if shows Firefox 'button "Continue"' 10; then
     h act Firefox "click $(grep -m1 -oE '\bb[0-9]+ button "Continue"' "$out/last.txt" | cut -d' ' -f1)" || return 1
   fi
-  python3 scripts/atspi-tree.py firefox 8 | head -120
   h act Firefox "key ctrl+l" "type data:text/html,<h1>hello from hush</h1>" "key Return" &&
-    shows Firefox "hello from hush" 20 &&
+    shows Firefox 'heading "hello from hush"' 20 &&
     pictured Firefox firefox
 }
 
