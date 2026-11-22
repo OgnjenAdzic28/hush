@@ -4,13 +4,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use hush_core::{
-    Activity, AppInfo, Error, Image, Op, Platform, Rect, Result, ScriptLanguage, Snapshot,
-    WindowInfo,
+    Activity, AppInfo, Error, Image, Op, Platform, Played, Rect, Result, ScriptLanguage, Snapshot,
+    Timed, WindowInfo,
 };
 
 use zbus::block_on;
 
 use crate::bus::{Bus, Element};
+use crate::input::Sender;
 use crate::lane::Lane;
 use crate::screen::Screen;
 use crate::watch::Watch;
@@ -92,6 +93,38 @@ impl LinuxPlatform {
         let screen = Arc::new(Screen::open(lane).map_err(Error::Failed)?);
         *known = Some((lane, screen.clone()));
         Ok(Some((lane, screen)))
+    }
+
+    /// The window's X window and frame on the lane, or `refusal` when its
+    /// app isn't on the lane.
+    fn on_lane(
+        &self,
+        window: &WindowInfo,
+        refusal: &str,
+    ) -> Result<(Arc<Screen>, x11rb::protocol::xproto::Window, Rect)> {
+        let pid = lock(&self.windows)
+            .get(&window.id)
+            .and_then(|(_, pid)| *pid);
+        let Some(pid) = pid else {
+            return Err(Error::Stale(format!("window \"{}\" closed", window.title)));
+        };
+        let Some((_, screen)) = self.lane(false)?.filter(|(lane, _)| lane.holds(pid)) else {
+            return Err(Error::Unsupported(refusal.into()));
+        };
+        let (found, frame) = screen.window_of(pid, window.frame).map_err(Error::Failed)?;
+        Ok((screen, found, frame))
+    }
+
+    /// Runs `send` with input aimed at the window on the lane; refuses for
+    /// windows on the user's display.
+    fn send<T>(
+        &self,
+        window: &WindowInfo,
+        send: impl FnOnce(&Sender<'_>) -> Result<T>,
+    ) -> Result<T> {
+        let (screen, found, frame) = self.on_lane(window, act::NEEDS_LANE)?;
+        let input = Sender::to(&screen, found, (frame.x, frame.y))?;
+        send(&input)
     }
 
     /// Whether the app runs on Hush's display, where input and capture
@@ -200,20 +233,30 @@ impl Platform for LinuxPlatform {
         let bus = self.bus()?;
         let element = self.window_element(app, window)?;
         let in_lane = self.in_lane(app.pid);
-        block_on(act::perform(&bus, &element, in_lane, op))
+        match op {
+            Op::Key { combo, repeat } if in_lane => {
+                self.send(window, |input| input.combo(combo, repeat))
+            }
+            Op::Click {
+                x,
+                y,
+                button,
+                count,
+            } if in_lane => self.send(window, |input| input.click((x, y), button, count)),
+            Op::Scroll { x, y, dx, dy } if in_lane => {
+                self.send(window, |input| input.scroll((x, y), dx, dy))
+            }
+            op => block_on(act::perform(&bus, &element, in_lane, op)),
+        }
+    }
+
+    fn play(&self, app: &AppInfo, window: &WindowInfo, events: &[Timed]) -> Result<Played> {
+        self.window_element(app, window)?;
+        self.send(window, |input| input.play(events))
     }
 
     fn capture(&self, window: &WindowInfo, region: Option<Rect>, max: u32) -> Result<Image> {
-        let pid = lock(&self.windows)
-            .get(&window.id)
-            .and_then(|(_, pid)| *pid);
-        let Some(pid) = pid else {
-            return Err(Error::Stale(format!("window \"{}\" closed", window.title)));
-        };
-        let Some((_, screen)) = self.lane(false)?.filter(|(lane, _)| lane.holds(pid)) else {
-            return Err(Error::Unsupported(CAPTURE_NEEDS_LANE.into()));
-        };
-        let (found, frame) = screen.window_of(pid, window.frame).map_err(Error::Failed)?;
+        let (screen, found, frame) = self.on_lane(window, CAPTURE_NEEDS_LANE)?;
         let size = (frame.w as u32, frame.h as u32);
         screen
             .capture(found, size, region, max)

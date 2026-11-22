@@ -132,6 +132,21 @@ impl Lane {
     }
 }
 
+impl Lane {
+    /// Held while sending input to the lane. Every Hush host on this
+    /// machine shares the lane, and one host's keys must not land in the
+    /// middle of another's drag.
+    pub(crate) fn input_lock() -> std::io::Result<std::fs::File> {
+        let path = state_file().with_file_name("lane-input.lock");
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = std::fs::File::create(path)?;
+        file.lock()?;
+        Ok(file)
+    }
+}
+
 fn socket(display: u32) -> PathBuf {
     PathBuf::from(format!("/tmp/.X11-unix/X{display}"))
 }

@@ -3,7 +3,7 @@
 //! any app, including one on the user's own display.
 //!
 //! Keys and pointer events need the lane (Hush's own display), where they
-//! can't reach the user; until an app runs there they fail closed.
+//! can't reach the user; for apps on the user's display they fail closed.
 
 use futures_util::future::join_all;
 use hush_core::{Error, Op, Result};
@@ -20,7 +20,7 @@ const SHOW_MENU: [&str; 5] = ["showmenu", "show menu", "menu", "popup", "press"]
 /// elements, which would take focus from the user.
 const FOCUS_ON_USER_DISPLAY: &str = "focusing an element raises the app's window on Linux, which would take your focus; use set or type with its ref instead";
 
-const NEEDS_LANE: &str = "keys and pointer input on Linux only go to apps Hush runs on its own display, so they can't reach yours; for this app use click, set and type on refs";
+pub(crate) const NEEDS_LANE: &str = "keys and pointer input on Linux only go to apps Hush runs on its own display, so they can't reach yours; for this app use click, set and type on refs";
 
 pub(crate) async fn perform(
     bus: &Bus,
@@ -44,9 +44,7 @@ pub(crate) async fn perform(
         Op::Menu(path) => menu(bus, window, path).await,
         // Apps Hush started already run on its display.
         Op::Lane if in_lane => Ok(()),
-        Op::Key { .. } | Op::Click { .. } | Op::Scroll { .. } if in_lane => Err(
-            Error::Unsupported("keys and pointer input on Hush's display aren't built yet; use click, set and type on refs".into()),
-        ),
+        // On the lane the platform sends these itself (`input.rs`).
         Op::Lane | Op::Key { .. } | Op::Click { .. } | Op::Scroll { .. } => {
             Err(Error::Unsupported(NEEDS_LANE.into()))
         }
