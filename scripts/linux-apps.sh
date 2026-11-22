@@ -127,7 +127,11 @@ check_firefox() {
 
 # Chromium's family, the same way: load a page and read its heading.
 check_chrome() {
-  opened "Google Chrome" 60 && pictured "Google Chrome" chrome-start || return 1
+  if ! opened "Google Chrome" 60; then
+    ps -eo pid,args | grep "[c]hrome" | cut -c1-160 | head -8
+    return 1
+  fi
+  pictured "Google Chrome" chrome-start || return 1
   h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return" &&
     shows "Google Chrome" 'heading "hello from hush ✓"' 20 &&
     pictured "Google Chrome" chrome
