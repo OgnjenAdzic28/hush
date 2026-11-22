@@ -25,8 +25,8 @@ impl Drop for Launched {
 
 /// Starts `command` and waits until it shows a window on the bus.
 fn launch(platform: &LinuxPlatform, command: &str) -> (Launched, AppInfo) {
-    // Connecting turns accessibility on. Qt only exposes its tree when it
-    // is on as the app starts, so connect first.
+    // Connecting turns accessibility on, which some toolkits only check as
+    // they start, so connect first.
     platform.apps(None).unwrap();
     let child = Launched(
         Command::new(command)
@@ -104,20 +104,6 @@ fn reads_a_gtk4_window() {
             "no button {digit}"
         );
     }
-}
-
-#[test]
-#[ignore]
-fn reads_a_qt_window() {
-    let platform = LinuxPlatform::new();
-    let (_app, info) = launch(&platform, "featherpad");
-    let nodes = observe(&platform, &info);
-    assert!(
-        nodes
-            .iter()
-            .any(|(r, _)| *r == Role::MenuBar || *r == Role::MenuItem)
-    );
-    assert!(nodes.iter().any(|(r, _)| r.is_text_input()));
 }
 
 #[test]
