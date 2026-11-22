@@ -10,9 +10,9 @@ use hush_core::{
 
 use zbus::block_on;
 
-use crate::apps;
 use crate::bus::{Bus, Element};
-use crate::{installed, read};
+use crate::watch::Watch;
+use crate::{act, apps, installed, read};
 
 /// Reads apps through the session's accessibility bus. Connecting is lazy
 /// and retried, so the server starts (and says what's missing) on a machine
@@ -22,8 +22,10 @@ pub struct LinuxPlatform {
     bus: Mutex<Option<Arc<Bus>>>,
     /// Each running app's accessibility root, by pid.
     roots: Mutex<HashMap<u32, Element>>,
-    /// Windows seen by `windows`, by id, for `read`.
+    /// Windows seen by `windows`, by id, for `read` and `perform`.
     windows: Mutex<HashMap<u64, Element>>,
+    /// Started on the first `activity` call, then runs for good.
+    watch: Mutex<Option<Arc<Watch>>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -59,6 +61,27 @@ impl LinuxPlatform {
             .ok_or_else(|| Error::NotFound(format!("{} isn't on the accessibility bus", app.name)))
     }
 
+    fn window_element(&self, app: &AppInfo, window: &WindowInfo) -> Result<Element> {
+        if let Some(element) = lock(&self.windows).get(&window.id) {
+            return Ok(element.clone());
+        }
+        self.windows(app)?;
+        lock(&self.windows)
+            .get(&window.id)
+            .cloned()
+            .ok_or_else(|| Error::Stale(format!("window \"{}\" closed", window.title)))
+    }
+
+    fn watch(&self, bus: &Bus) -> Result<Arc<Watch>> {
+        let mut watch = lock(&self.watch);
+        if let Some(watch) = &*watch {
+            return Ok(watch.clone());
+        }
+        let started = Arc::new(block_on(Watch::start(bus.connection())).map_err(failed)?);
+        *watch = Some(started.clone());
+        Ok(started)
+    }
+
     fn list(&self, bus: &Bus) -> Result<Vec<AppInfo>> {
         let running = block_on(apps::running(bus)).map_err(failed)?;
         let mut roots = lock(&self.roots);
@@ -72,7 +95,7 @@ impl LinuxPlatform {
     }
 }
 
-fn failed(error: zbus::Error) -> Error {
+pub(crate) fn failed(error: zbus::Error) -> Error {
     match error {
         zbus::Error::MethodError(name, _, _)
             if name.as_str() == "org.freedesktop.DBus.Error.ServiceUnknown" =>
@@ -85,7 +108,7 @@ fn failed(error: zbus::Error) -> Error {
 
 fn not_yet<T>(what: &str) -> Result<T> {
     Err(Error::Unsupported(format!(
-        "Hush on Linux can read windows but can't {what} yet"
+        "Hush on Linux can't {what} yet"
     )))
 }
 
@@ -123,26 +146,26 @@ impl Platform for LinuxPlatform {
 
     fn read(&self, app: &AppInfo, window: &WindowInfo) -> Result<Snapshot<Element>> {
         let bus = self.bus()?;
-        let element = lock(&self.windows).get(&window.id).cloned();
-        let element = match element {
-            Some(element) => element,
-            None => {
-                self.windows(app)?;
-                lock(&self.windows)
-                    .get(&window.id)
-                    .cloned()
-                    .ok_or_else(|| Error::Stale(format!("window \"{}\" closed", window.title)))?
-            }
-        };
+        let element = self.window_element(app, window)?;
         block_on(read::window(&bus, app, window, &element)).map_err(failed)
     }
 
-    fn activity(&self, _app: &AppInfo) -> Activity {
-        Activity::default()
+    fn activity(&self, app: &AppInfo) -> Activity {
+        let Ok(bus) = self.bus() else {
+            return Activity::default();
+        };
+        let (Ok(watch), Ok(root)) = (self.watch(&bus), self.root(&bus, app)) else {
+            return Activity::default();
+        };
+        watch.activity(&root.bus)
     }
 
-    fn perform(&self, _app: &AppInfo, _window: &WindowInfo, _op: Op<'_, Element>) -> Result<()> {
-        not_yet("act on them")
+    fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Element>) -> Result<()> {
+        let bus = self.bus()?;
+        let element = self.window_element(app, window)?;
+        // No app runs on Hush's own display yet, so every app is on the
+        // user's, where only accessibility actions are allowed.
+        block_on(act::perform(&bus, &element, false, op))
     }
 
     fn capture(&self, _window: &WindowInfo, _region: Option<Rect>, _max: u32) -> Result<Image> {

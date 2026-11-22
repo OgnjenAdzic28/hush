@@ -1,0 +1,152 @@
+//! Acts on real apps through the engine, with the steps an agent sends.
+//! Ignored by default; the Linux CI job runs them headlessly:
+//!
+//! ```sh
+//! xvfb-run -a dbus-run-session -- cargo test -p hush-linux -- --ignored --test-threads=1
+//! ```
+#![cfg(target_os = "linux")]
+
+use std::process::{Child, Command};
+use std::time::{Duration, Instant};
+
+use hush_core::Platform;
+use hush_engine::{Engine, ObserveOptions};
+use hush_linux::LinuxPlatform;
+
+struct Launched(Child);
+
+impl Drop for Launched {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Starts `command` and waits for its window on the accessibility bus.
+fn launch(engine: &Engine<LinuxPlatform>, command: &str) -> Launched {
+    engine.platform().apps(None).unwrap();
+    let child = Launched(Command::new(command).spawn().unwrap());
+    let pid = child.0.id();
+    // Waits on an observable condition: the window appearing on the bus.
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !engine
+        .platform()
+        .apps(None)
+        .unwrap()
+        .iter()
+        .any(|a| a.pid == Some(pid))
+    {
+        assert!(Instant::now() < deadline, "{command} never showed a window");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    child
+}
+
+/// The ref of the first outline line with this role word and name (`None`
+/// name: any line of that role that isn't disabled).
+fn ref_of(outline: &str, role: &str, name: Option<&str>) -> String {
+    outline
+        .lines()
+        .map(str::trim)
+        .find(|line| {
+            let mut parts = line.splitn(3, ' ');
+            let (_, r, rest) = (parts.next(), parts.next(), parts.next().unwrap_or(""));
+            r == Some(role)
+                && match name {
+                    Some(name) => rest.starts_with(&format!("\"{name}\"")),
+                    None => !rest.contains("[disabled]"),
+                }
+        })
+        .and_then(|line| line.split(' ').next())
+        .unwrap_or_else(|| panic!("no {role} {name:?} in\n{outline}"))
+        .to_owned()
+}
+
+fn act(engine: &mut Engine<LinuxPlatform>, app: &str, steps: &[&str]) -> String {
+    let steps: Vec<String> = steps.iter().map(|s| s.to_string()).collect();
+    let out = engine.act(app, None, &steps).unwrap();
+    println!("act {steps:?}\n{out}");
+    out
+}
+
+#[test]
+#[ignore]
+fn presses_calculator_buttons_and_settles_on_events() {
+    let mut engine = Engine::new(LinuxPlatform::new());
+    let _app = launch(&engine, "gnome-calculator");
+    let outline = engine
+        .observe("gnome-calculator", ObserveOptions::default())
+        .unwrap();
+    let seven = ref_of(&outline, "button", Some("7"));
+    let eight = ref_of(&outline, "button", Some("8"));
+    let out = act(
+        &mut engine,
+        "gnome-calculator",
+        &[&format!("click {seven}"), &format!("click {eight}")],
+    );
+    assert!(out.contains("78"), "the display didn't show 78");
+    assert!(out.contains("settled"), "the app never settled on events");
+}
+
+#[test]
+#[ignore]
+fn sets_and_types_text_and_toggles_a_checkbox() {
+    let mut engine = Engine::new(LinuxPlatform::new());
+    let _app = launch(&engine, "gtk3-widget-factory");
+    let outline = engine
+        .observe("gtk3-widget-factory", ObserveOptions::default())
+        .unwrap();
+    let field = ref_of(&outline, "field", None);
+    let out = act(
+        &mut engine,
+        "gtk3-widget-factory",
+        &[
+            &format!("set {field} \"hello hush\""),
+            &format!("type {field} \" again\""),
+        ],
+    );
+    assert!(
+        out.contains("hello hush again"),
+        "text wasn't set and typed"
+    );
+
+    let checkbox = ref_of(&outline, "checkbox", None);
+    let before = outline
+        .lines()
+        .any(|l| l.trim().starts_with(&format!("{checkbox} ")) && l.contains("[checked"));
+    let out = act(
+        &mut engine,
+        "gtk3-widget-factory",
+        &[&format!("click {checkbox}")],
+    );
+    let after = engine
+        .observe(
+            "gtk3-widget-factory",
+            ObserveOptions {
+                full: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let now = after
+        .lines()
+        .any(|l| l.trim().starts_with(&format!("{checkbox} ")) && l.contains("[checked"));
+    assert_ne!(before, now, "the checkbox didn't toggle:\n{out}");
+}
+
+#[test]
+#[ignore]
+fn refuses_keys_and_focus_for_apps_on_the_users_display() {
+    let mut engine = Engine::new(LinuxPlatform::new());
+    let _app = launch(&engine, "gtk3-widget-factory");
+    let outline = engine
+        .observe("gtk3-widget-factory", ObserveOptions::default())
+        .unwrap();
+    let steps = vec!["key ctrl+a".to_string()];
+    let error = engine.act("gtk3-widget-factory", None, &steps).unwrap_err();
+    assert!(error.to_string().contains("own display"), "{error}");
+    let field = ref_of(&outline, "field", None);
+    let steps = vec![format!("focus {field}")];
+    let error = engine.act("gtk3-widget-factory", None, &steps).unwrap_err();
+    assert!(error.to_string().contains("take your focus"), "{error}");
+}
