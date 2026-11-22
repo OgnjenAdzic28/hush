@@ -1,7 +1,7 @@
 name: Release
 
 # Builds one universal macOS binary and static Linux binaries for x86_64 and
-# arm64. A pushed tag (v0.1.0) publishes them as a GitHub release, which
+# arm64. A pushed tag (v0.2.0) publishes them as a GitHub release, which
 # install.sh downloads; pull requests that touch the packaging build them
 # without publishing.
 on:
@@ -103,3 +103,66 @@ jobs:
             hush-linux-x86_64.tar.gz hush-linux-x86_64.tar.gz.sha256 \
             hush-linux-aarch64.tar.gz hush-linux-aarch64.tar.gz.sha256 \
             --title "Hush $GITHUB_REF_NAME" --generate-notes
+
+  installed:
+    # What a Linux user gets: install.sh on a fresh machine, then Hush
+    # starting Calculator on its own display, typing 42 and reading it back.
+    # On a tag this runs the published one-liner against the release; on a
+    # pull request it installs the build above.
+    needs: [linux, publish]
+    if: ${{ !cancelled() && needs.linux.result == 'success' && needs.publish.result != 'failure' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-x86_64
+            runner: ubuntu-24.04
+            arch: x86_64
+          - name: ubuntu-arm64
+            runner: ubuntu-24.04-arm
+            arch: aarch64
+          - name: debian-12
+            runner: ubuntu-24.04
+            arch: x86_64
+            container: debian:12
+          - name: fedora-41
+            runner: ubuntu-24.04
+            arch: x86_64
+            container: fedora:41
+    name: installed (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 20
+    env:
+      GSK_RENDERER: cairo
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    steps:
+      - name: Install what Hush needs and an app to drive
+        run: |
+          if command -v dnf >/dev/null; then
+            dnf install -y --setopt=install_weak_deps=False \
+              curl tar gzip procps-ng xorg-x11-server-Xvfb xorg-x11-xauth \
+              dbus-daemon dbus-tools at-spi2-core gnome-calculator
+          else
+            sudo=$(command -v sudo || true)
+            $sudo apt-get update
+            DEBIAN_FRONTEND=noninteractive $sudo apt-get install -y --no-install-recommends \
+              curl ca-certificates procps xvfb xauth dbus dbus-x11 at-spi2-core gnome-calculator
+          fi
+      - uses: actions/checkout@v4
+      - if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/download-artifact@v4
+        with:
+          name: hush-linux-${{ matrix.arch }}
+          path: build
+      - name: install.sh
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "$GITHUB_REF_NAME" ] && [ "$GITHUB_REF_TYPE" = tag ]; then
+            # The command the README gives, word for word.
+            curl -fsSL https://raw.githubusercontent.com/OgnjenAdzic28/hush/main/install.sh | sh
+            "$HOME/.local/bin/hush" --version | grep -x "hush ${GITHUB_REF_NAME#v}"
+          else
+            HUSH_DOWNLOAD_URL="file://$PWD/build/hush-linux-${{ matrix.arch }}.tar.gz" sh install.sh
+          fi
+      - name: Drive Calculator
+        run: xvfb-run -a dbus-run-session -- bash scripts/linux-apps.sh "$HOME/.local/bin/hush" calculator

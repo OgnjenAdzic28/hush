@@ -96,8 +96,9 @@ something in an app.
 Needs macOS 15 or later. Run `hush setup` again any time to check permissions or update the skill.
 
 On Linux the same command installs a static binary for x86_64 or arm64, and `hush setup` checks the
-accessibility bus, Xvfb and ffmpeg instead. Linux builds ship from the next release; until then,
-build from source.
+accessibility bus, Xvfb and ffmpeg instead. On Debian or Ubuntu that's
+`sudo apt install xvfb at-spi2-core ffmpeg`; on Fedora,
+`sudo dnf install xorg-x11-server-Xvfb at-spi2-core ffmpeg-free`.
 
 **Pick your agents**: install the skill with the [skills](https://skills.sh) CLI instead, which
 lets you choose from 70+ agents:
