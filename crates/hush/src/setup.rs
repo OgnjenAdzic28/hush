@@ -183,7 +183,7 @@ fn permissions(out: &mut String) -> bool {
         out,
         '✗',
         "Platform",
-        "not supported yet; Hush runs on macOS for now",
+        "not supported yet; Hush runs on macOS and Linux for now",
     );
     false
 }
