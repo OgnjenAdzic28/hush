@@ -39,7 +39,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xvfb dbus dbus-x11 at-spi2-core \
-            gtk-3-examples gnome-calculator featherpad
+            gtk-3-examples gnome-calculator featherpad python3-pyatspi
+      - name: Diagnose (temporary) what the registry sees
+        run: |
+          cat > /tmp/dump.py <<'PY'
+          import pyatspi, sys
+          d = pyatspi.Registry.getDesktop(0)
+          print("apps:", d.childCount)
+          for a in d:
+              if a is None: continue
+              print("APP", repr(a.name), "pid", a.get_process_id(), "children", a.childCount)
+              for w in a:
+                  if w is None: continue
+                  print("   ", w.getRoleName(), repr(w.name), [pyatspi.stateToString(s) for s in w.getState().getStates()])
+          PY
+          xvfb-run -a dbus-run-session -- bash -c '
+            dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true
+            gnome-calculator & featherpad & gtk3-widget-factory &
+            sleep 8
+            python3 /tmp/dump.py
+            kill %1 %2 %3' || true
       - run: cargo build -p hush-linux --tests
       - name: Read real apps
         run: xvfb-run -a dbus-run-session -- cargo test -p hush-linux -- --ignored --test-threads=1 --nocapture

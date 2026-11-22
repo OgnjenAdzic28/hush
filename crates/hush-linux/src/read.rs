@@ -74,11 +74,7 @@ fn read_one(bus: &Bus, element: &Element, root: bool) -> Reply<Option<(Node<Elem
         value = bus.number(element).ok().map(number);
     }
     if name.trim().is_empty() {
-        name = match role {
-            // A label's text is its name; some toolkits leave Name empty.
-            Role::Text => bus.text(element).unwrap_or_default(),
-            _ => bus.description(element).unwrap_or_default(),
-        };
+        name = bus.description(element).unwrap_or_default();
     }
     let node = Node {
         handle: element.clone(),

@@ -144,7 +144,8 @@ pub(crate) fn actions(role: Role) -> Actions {
 
 /// Roles whose value is their text contents (the `Text` interface).
 pub(crate) fn has_text_value(role: Role) -> bool {
-    role.is_text_input()
+    // A combo box's text lives in its entry child, not on the combo itself.
+    role.is_text_input() && role != Role::ComboBox
 }
 
 /// Roles whose value is a number (the `Value` interface).
