@@ -110,6 +110,7 @@ fn ax(handle: &Handle) -> Result<&Element> {
 pub(crate) fn to_ax<'a>(op: Op<'a, Handle>) -> Result<Op<'a, Element>> {
     Ok(match op {
         Op::Lane => Op::Lane,
+        Op::Unlane => Op::Unlane,
         Op::Press(h) => Op::Press(ax(h)?),
         Op::ShowMenu(h) => Op::ShowMenu(ax(h)?),
         Op::SetValue(h, value) => Op::SetValue(ax(h)?, value),

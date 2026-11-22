@@ -17,12 +17,83 @@
 
 use std::time::{Duration, Instant};
 
+use hush_core::Platform;
 use hush_engine::{Engine, ObserveOptions};
 use hush_macos::MacPlatform;
 
 mod common;
 
 use common::{front, launch, reference};
+
+#[test]
+#[ignore = "moves fixture windows onto the lane and back; needs the owner's go-ahead"]
+fn lane_isolates_one_window_and_restores_its_original_position() {
+    let mut engine = Engine::new(MacPlatform::new().expect("Accessibility permission"));
+    let _fixture = launch(true);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (app, before) = loop {
+        if let Some(app) = engine
+            .platform()
+            .apps(None)
+            .unwrap()
+            .into_iter()
+            .find(|app| app.name == "HushFixture")
+        {
+            let windows = engine.platform().windows(&app).unwrap();
+            if windows.len() == 2 {
+                break (app, windows);
+            }
+        }
+        assert!(Instant::now() < deadline, "both fixture windows must open");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    let target = before.iter().find(|w| w.title == "Hush Fixture").unwrap();
+    let other = before.iter().find(|w| w.title == "Later").unwrap();
+    // Re-parking must retain the original visible position, not the lane position.
+    for _ in 0..2 {
+        let report = engine
+            .act("HushFixture", Some(&target.title), &["lane".into()])
+            .unwrap();
+        assert!(!report.contains("stopped"), "{report}");
+        let windows = engine.platform().windows(&app).unwrap();
+        assert_ne!(
+            windows.iter().find(|w| w.id == target.id).unwrap().frame,
+            target.frame
+        );
+        assert_eq!(
+            windows.iter().find(|w| w.id == other.id).unwrap().frame,
+            other.frame
+        );
+    }
+    let report = engine
+        .act("HushFixture", Some(&target.title), &["unlane".into()])
+        .unwrap();
+    assert!(!report.contains("stopped"), "{report}");
+    for original in &before {
+        let windows = engine.platform().windows(&app).unwrap();
+        assert_eq!(
+            windows.iter().find(|w| w.id == original.id).unwrap().frame,
+            original.frame
+        );
+    }
+    let report = engine
+        .act("HushFixture", Some(&target.title), &["lane".into()])
+        .unwrap();
+    assert!(!report.contains("stopped"), "{report}");
+    drop(engine);
+    let platform = MacPlatform::new().unwrap();
+    for original in &before {
+        let windows = platform.windows(&app).unwrap();
+        assert_eq!(
+            windows.iter().find(|w| w.id == original.id).unwrap().frame,
+            original.frame
+        );
+    }
+    assert!(
+        platform.windows(&app).unwrap().len() == 2,
+        "cleanup must not hide the app"
+    );
+}
 
 #[test]
 #[ignore = "opens a fixture window and acts on it; needs the owner's go-ahead"]

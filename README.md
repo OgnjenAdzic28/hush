@@ -139,10 +139,12 @@ Ten sessions hammering one host: 500 calls in 2.2 s, zero errors, observe in 48 
 
 ## The lane
 
-Agents don't need your screen. The `lane` step moves an app's windows onto Hush's lane, a virtual
-display nobody can see, parked off a corner of your main display where the pointer can't reach.
-Windows there still render, take clicks and keys, and can be captured. When the host exits, apps in
-the lane are hidden first, so nothing ever lands on your screen.
+The `lane` step moves only the selected window onto Hush's virtual background display. Use
+`hush act APP --window TITLE 'lane'` to park it and `hush act APP --window TITLE 'unlane'` to
+restore its original position. Other windows stay where they are. Windows in the lane still
+render, take clicks and keys, and can be captured. On normal host shutdown, parked windows are
+restored without hiding their apps. For a browser task, first move the existing task tab into
+its own window so unrelated tabs stay visible.
 
 ## Recording demos
 

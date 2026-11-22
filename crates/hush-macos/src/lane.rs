@@ -12,9 +12,10 @@
 //! class DeskPad and BetterDisplay use) and lives as long as this process.
 //! It is placed diagonally off a corner of the main display: displays touch
 //! only at that one point, so the pointer can't wander onto it. When the
-//! process ends normally the apps in the lane are hidden, so their windows
-//! don't land on the user's screen when the display goes away.
+//! process ends normally only parked windows are restored to their original
+//! positions; other windows and the app's visibility are left alone.
 
+use std::collections::HashMap;
 use std::ffi::c_void;
 use std::sync::Mutex;
 use std::thread;
@@ -45,8 +46,8 @@ struct Lane {
     /// (the daemon, an MCP server) owns the lane this one reuses.
     _display: Option<Retained<AnyObject>>,
     bounds: Rect,
-    /// Apps with windows in the lane, hidden again on exit.
-    parked: Vec<i32>,
+    /// Original positions, retained until explicit restore or host shutdown.
+    parked: HashMap<Element, CGPoint>,
 }
 
 // SAFETY: the display object is only retained and released, never messaged
@@ -55,51 +56,65 @@ unsafe impl Send for Lane {}
 
 static LANE: Mutex<Option<Lane>> = Mutex::new(None);
 
-/// Moves the app's windows into the lane, creating it if needed. A hidden
-/// app shows itself there: raising one of its windows makes AppKit unhide it
-/// without activating it.
-pub(crate) fn park(pid: i32, windows: &[Element]) -> Result<()> {
-    if windows.is_empty() {
-        return Err(Error::NotFound("the app has no windows to move".into()));
-    }
+/// Moves only this window into the lane, creating it if needed.
+pub(crate) fn park(pid: i32, window: &Element) -> Result<()> {
+    let original = position(window)
+        .ok_or_else(|| Error::Failed("couldn't read the window's original position".into()))?;
     let bounds = bounds()?;
-    for (i, window) in windows.iter().enumerate() {
-        let step = 30.0 * i as f64;
-        let at = CGPoint {
-            x: bounds.x + 40.0 + step,
-            y: bounds.y + 40.0 + step,
-        };
-        set_position(window, at)?;
-    }
-    if apps::is_hidden(pid) {
-        // `AXHidden` false would call `-[NSApplication unhide:]`, which
-        // activates; ordering a window in calls `unhideWithoutActivation`.
-        act::perform_action(&windows[0], "AXRaise")?;
-        if !wait(|| !apps::is_hidden(pid)) {
-            return Err(Error::Failed(
-                "the app stayed hidden; it can't be shown in the lane without activating it".into(),
-            ));
+    {
+        let mut lane = LANE.lock().map_err(|_| Error::Failed("lane lock".into()))?;
+        if let Some(lane) = lane.as_mut() {
+            lane.parked.entry(window.clone()).or_insert(original);
         }
     }
-    let inside = |window: &Element| {
-        position(window).is_some_and(|p| {
-            p.x >= bounds.x
-                && p.y >= bounds.y
-                && p.x < bounds.x + bounds.w
-                && p.y < bounds.y + bounds.h
-        })
-    };
-    if !wait(|| windows.iter().all(inside)) {
+    set_position(
+        window,
+        CGPoint {
+            x: bounds.x + 40.0,
+            y: bounds.y + 40.0,
+        },
+    )?;
+    if apps::is_hidden(pid) {
+        // AXRaise unhides without activating; never change other window positions.
+        act::perform_action(window, "AXRaise")?;
+        if !wait(|| !apps::is_hidden(pid)) {
+            return Err(Error::Failed("the app stayed hidden".into()));
+        }
+    }
+    if !wait(|| inside(window, bounds)) {
         return Err(Error::Failed(
-            "the app moved its windows back out of the lane".into(),
+            "the window moved back out of the lane".into(),
         ));
     }
-    if let Ok(mut lane) = LANE.lock()
-        && let Some(lane) = lane.as_mut()
-        && !lane.parked.contains(&pid)
-    {
-        lane.parked.push(pid);
+    Ok(())
+}
+
+fn inside(window: &Element, bounds: Rect) -> bool {
+    position(window).is_some_and(|p| {
+        p.x >= bounds.x && p.y >= bounds.y && p.x < bounds.x + bounds.w && p.y < bounds.y + bounds.h
+    })
+}
+
+/// Restores only this window; a failed restore retains its saved position.
+pub(crate) fn restore(window: &Element) -> Result<()> {
+    let mut lane = LANE.lock().map_err(|_| Error::Failed("lane lock".into()))?;
+    let lane = lane
+        .as_mut()
+        .ok_or_else(|| Error::NotFound("no lane to restore from".into()))?;
+    let original = *lane
+        .parked
+        .get(window)
+        .ok_or_else(|| Error::NotFound("this window has no saved lane position".into()))?;
+    set_position(window, original)?;
+    if !wait(|| {
+        position(window)
+            .is_some_and(|p| (p.x - original.x).abs() < 1.0 && (p.y - original.y).abs() < 1.0)
+    }) {
+        return Err(Error::Failed(
+            "the window did not return to its saved position".into(),
+        ));
     }
+    lane.parked.remove(window);
     Ok(())
 }
 
@@ -128,14 +143,14 @@ pub(crate) fn to_top(window: &Element) -> Result<()> {
     Ok(())
 }
 
-/// Hides the apps in the lane. Called when the platform is dropped, before
-/// the display goes away with the process.
+/// Restores parked windows before the display goes away, without hiding apps.
 pub(crate) fn release() {
     let Ok(mut lane) = LANE.lock() else { return };
     if let Some(lane) = lane.as_mut() {
-        for pid in lane.parked.drain(..) {
-            // Hiding never activates anything.
-            let _ = act::set_bool(&Element::application(pid), "AXHidden", true);
+        for (window, original) in lane.parked.drain() {
+            if inside(&window, lane.bounds) {
+                let _ = set_position(&window, original);
+            }
         }
     }
 }
@@ -151,7 +166,7 @@ fn bounds() -> Result<Rect> {
         *lane = Some(Lane {
             _display: None,
             bounds,
-            parked: Vec::new(),
+            parked: HashMap::new(),
         });
         return Ok(bounds);
     }
@@ -160,7 +175,7 @@ fn bounds() -> Result<Rect> {
     *lane = Some(Lane {
         _display: Some(display),
         bounds,
-        parked: Vec::new(),
+        parked: HashMap::new(),
     });
     Ok(bounds)
 }

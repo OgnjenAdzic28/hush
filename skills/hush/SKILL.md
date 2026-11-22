@@ -26,6 +26,16 @@ If a command says it lacks Accessibility or Screen Recording, ask the user to gr
 running you, in System Settings > Privacy & Security. If it says it is inside a sandbox, ask the
 user to run `hush setup` or let `hush` run outside your sandbox. Don't try to work around either.
 
+## Background browser tasks
+
+For work on an existing browser tab, first move that live tab into its own window using the observed browser menu. Preserve its state instead of duplicating or reopening its URL. Record the source window, tab position and task window's original bounds in session memory. Leave unrelated windows and tabs alone.
+
+Park only the task window with `hush act 'Google Chrome' --window 'UNIQUE TASK WINDOW TITLE' 'lane'`. Always use an unambiguous observed window title; the command defaults to the main window if no window is supplied. Verify that the task window moved and the other windows stayed in place, then keep all actions bound to the task window.
+
+On completion, pause, error, or a request to bring the window back, run `hush act 'Google Chrome' --window 'UNIQUE TASK WINDOW TITLE' 'unlane'`. This restores that window's saved position without moving other windows or activating Chrome. Return the existing tab to its original window and position when possible; otherwise leave it in its restored visible window and report that. Only bring Chrome forward when requested. Do not quit Chrome or stop a shared Hush host as cleanup.
+
+These commands require the local window-scoped lane build: `hush --help` must describe `lane` as moving only the target window and list `unlane`. Older builds park the whole app even with `--window`; do not use their lane for task-tab isolation.
+
 ## The loop
 
 1. **Find the app.** `hush apps notes`. Use the name it prints.
@@ -75,7 +85,7 @@ session, so refs from one command work in the next.
 | `scroll REF up\|down\|left\|right [N]` | scroll a list or page |
 | `drag A to B` | refs or X,Y; dragging onto a ref takes its place in a list |
 | `wait REF`, `wait gone REF`, `wait text "T"` | wait for something to appear or go (default 5 s; add `within 30s` for longer) |
-| `lane` | move the app's windows off screen, where they still render and take input |
+| `lane` / `unlane` | park only the target window off screen / restore its saved position |
 
 ## The other commands
 
