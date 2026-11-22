@@ -15,5 +15,9 @@ futures-util = { version = "0.3", default-features = false, features = ["std", "
 serde = "1"
 zbus = "5.19"
 
+[dev-dependencies]
+# Tests drive real apps through the engine, as an agent would.
+hush-engine = { path = "../hush-engine" }
+
 [lints]
 workspace = true

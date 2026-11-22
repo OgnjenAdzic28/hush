@@ -19,6 +19,9 @@ use zbus::zvariant::{DynamicType, OwnedObjectPath, OwnedValue, Type, Value};
 use crate::roles::StateSet;
 
 const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
+const ACTION: &str = "org.a11y.atspi.Action";
+const EDITABLE_TEXT: &str = "org.a11y.atspi.EditableText";
+const SELECTION: &str = "org.a11y.atspi.Selection";
 const COMPONENT: &str = "org.a11y.atspi.Component";
 const TEXT: &str = "org.a11y.atspi.Text";
 const VALUE: &str = "org.a11y.atspi.Value";
@@ -204,6 +207,85 @@ impl Bus {
     pub(crate) async fn number(&self, element: &Element) -> Reply<f64> {
         let value = self.property(element, VALUE, "CurrentValue").await?;
         f64::try_from(value).map_err(zbus::Error::Variant)
+    }
+
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.connection
+    }
+
+    /// The element's action names (`Action` interface), like "click".
+    pub(crate) async fn actions(&self, element: &Element) -> Reply<Vec<String>> {
+        let actions: Vec<(String, String, String)> =
+            self.call(element, ACTION, "GetActions", &()).await?;
+        Ok(actions.into_iter().map(|(name, _, _)| name).collect())
+    }
+
+    /// Runs action `index`. `false` when the app refused it.
+    pub(crate) async fn do_action(&self, element: &Element, index: i32) -> Reply<bool> {
+        self.call(element, ACTION, "DoAction", &index).await
+    }
+
+    pub(crate) async fn set_text(&self, element: &Element, text: &str) -> Reply<bool> {
+        self.call(element, EDITABLE_TEXT, "SetTextContents", &text)
+            .await
+    }
+
+    pub(crate) async fn insert_text(&self, element: &Element, at: i32, text: &str) -> Reply<bool> {
+        let length = i32::try_from(text.chars().count()).unwrap_or(i32::MAX);
+        self.call(element, EDITABLE_TEXT, "InsertText", &(at, text, length))
+            .await
+    }
+
+    /// Where the caret is, in characters; `None` when the app doesn't say.
+    pub(crate) async fn caret(&self, element: &Element) -> Reply<Option<i32>> {
+        let caret = i32::try_from(self.property(element, TEXT, "CaretOffset").await?)
+            .map_err(zbus::Error::Variant)?;
+        Ok((caret >= 0).then_some(caret))
+    }
+
+    pub(crate) async fn set_caret(&self, element: &Element, at: i32) -> Reply<bool> {
+        self.call(element, TEXT, "SetCaretOffset", &at).await
+    }
+
+    pub(crate) async fn character_count(&self, element: &Element) -> Reply<i32> {
+        i32::try_from(self.property(element, TEXT, "CharacterCount").await?)
+            .map_err(zbus::Error::Variant)
+    }
+
+    pub(crate) async fn set_number(&self, element: &Element, value: f64) -> Reply<()> {
+        self.call(
+            element,
+            PROPERTIES,
+            "Set",
+            &(VALUE, "CurrentValue", Value::from(value)),
+        )
+        .await
+    }
+
+    pub(crate) async fn grab_focus(&self, element: &Element) -> Reply<bool> {
+        self.call(element, COMPONENT, "GrabFocus", &()).await
+    }
+
+    /// Scrolls the element's containers until it shows (`ATSPI_SCROLL_ANYWHERE`).
+    pub(crate) async fn scroll_to(&self, element: &Element) -> Reply<bool> {
+        self.call(element, COMPONENT, "ScrollTo", &6u32).await
+    }
+
+    pub(crate) async fn parent(&self, element: &Element) -> Reply<Element> {
+        let value = self.property(element, ACCESSIBLE, "Parent").await?;
+        let (bus, path) =
+            <(String, OwnedObjectPath)>::try_from(value).map_err(zbus::Error::Variant)?;
+        Ok(Element::from_reply((bus, path)))
+    }
+
+    pub(crate) async fn index_in_parent(&self, element: &Element) -> Reply<i32> {
+        self.call(element, ACCESSIBLE, "GetIndexInParent", &())
+            .await
+    }
+
+    /// Selects child `index` of a list, table or tab group.
+    pub(crate) async fn select_child(&self, container: &Element, index: i32) -> Reply<bool> {
+        self.call(container, SELECTION, "SelectChild", &index).await
     }
 
     /// The process behind a bus name.
