@@ -145,7 +145,12 @@ impl Bus {
         match all {
             Ok(children) => return Ok(children.into_iter().map(Element::from_reply).collect()),
             Err(zbus::Error::MethodError(..)) => {}
-            Err(e) => return Err(e),
+            Err(e) => {
+                if std::env::var_os("HUSH_ATSPI_DEBUG").is_some() {
+                    eprintln!("DEBUG GetChildren {element:?}: {e:?}");
+                }
+                return Err(e);
+            }
         }
         let count = i32::try_from(self.property(element, ACCESSIBLE, "ChildCount").await?)
             .map_err(zbus::Error::Variant)?;

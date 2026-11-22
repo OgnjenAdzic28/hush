@@ -30,6 +30,9 @@ pub(crate) async fn running(bus: &Bus) -> Reply<Vec<Running>> {
 async fn describe(bus: &Bus, root: Element) -> Option<Running> {
     let (windows, pid, name) =
         futures_util::join!(windows(bus, &root), bus.pid(&root.bus), bus.name(&root));
+    if std::env::var_os("HUSH_ATSPI_DEBUG").is_some() {
+        eprintln!("DEBUG app {root:?} pid {pid:?} name {name:?} windows {:?}", windows.as_ref().map(|w| w.len()));
+    }
     let windows = windows.ok()?;
     if windows.is_empty() {
         return None;
@@ -78,6 +81,9 @@ async fn window(bus: &Bus, element: Element) -> Option<Window> {
         bus.name(&element),
         bus.frame(&element, Coords::Screen),
     );
+    if std::env::var_os("HUSH_ATSPI_DEBUG").is_some() {
+        eprintln!("DEBUG child {element:?} states {states:?} role {role:?} title {title:?}");
+    }
     let states = states.ok()?;
     if !matches!(
         roles::map(&role.ok()?, states),

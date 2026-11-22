@@ -32,6 +32,7 @@ jobs:
       LIBGL_ALWAYS_SOFTWARE: "1"
       # Qt exposes its tree only when asked to, or when a screen reader runs.
       QT_LINUX_ACCESSIBILITY_ALWAYS_ON: "1"
+      HUSH_ATSPI_DEBUG: "1"
     steps:
       - uses: actions/checkout@v4
       - run: rustup show active-toolchain
