@@ -614,3 +614,31 @@ fn a_test_file_with_a_mistake_runs_nothing() {
     assert!(error.contains("line 2"), "{error}");
     assert!(engine.platform().ops().is_empty());
 }
+
+#[test]
+fn an_agents_run_saves_as_a_test_that_replays_in_a_new_session() {
+    let mut agent = Engine::new(Fake::new());
+    agent.observe("Editor", ObserveOptions::default()).unwrap();
+    agent
+        .act("Editor", None, &steps(&["type t1 \"Q4\"", "click b1"]))
+        .unwrap();
+    agent.act("Editor", None, &steps(&["wait e2"])).unwrap();
+    let saved = agent.save().unwrap();
+    assert_eq!(
+        saved,
+        "# Saved by hush save. Run it with hush test; add expect lines to check results.\n\
+         app Editor\n\
+         type field \"Name\" \"Q4\"\n\
+         click button \"Save\"\n\
+         wait sheet \"Saved\"\n"
+    );
+    assert!(agent.save().is_err(), "a save takes what it wrote");
+
+    let mut replay = Engine::new(Fake::new());
+    let run = replay.test(&saved, None).unwrap();
+    assert!(run.failure.is_none(), "{run:?}");
+    assert_eq!(
+        replay.platform().ops(),
+        ["Type { text: \"Q4\", into: Some(Name) }", "Press(Save)"]
+    );
+}

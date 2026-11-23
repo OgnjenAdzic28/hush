@@ -129,6 +129,10 @@ stops at its first failure with what the window shows instead; the outline and a
 failure are in `hush-results/`, plus a movie with `--record`. `window "Title"` switches to another
 window of the app. `expect` takes what `wait` takes, plus `ELEMENT = VALUE`.
 
+To write a test from a run, do the task once with `hush act`, then `hush save APP FILE`: it writes
+every step since the last save with refs turned into locators. Read the file, add `expect` lines
+for what should be true, and run it.
+
 ## Good habits
 
 - Read before acting, then trust the diffs. A second `observe` right after an `act` is wasted.

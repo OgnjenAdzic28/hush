@@ -73,7 +73,7 @@ act TextEdit ["type t1 \" Done.\"", "key cmd+s"]
 | `script` | Run AppleScript (in process, compiled once) or JXA |
 | `see` | A screenshot of one window or element, for what the outline can't show |
 | `record` | Film a window with an animated agent cursor |
-| `hush test` | Run desktop tests written as text (CLI) |
+| `hush test`, `hush save` | Run desktop tests written as text; save an agent's run as one (CLI) |
 
 Steps: `click REF|X,Y`, `double REF`, `right REF`, `set REF VALUE`, `type [REF] TEXT`,
 `key COMBO [xN]`, `menu A > B`, `pick REF OPTION`, `select REF`, `focus REF`,
@@ -194,6 +194,16 @@ instead (`expected = "Milk", but t2 field "Title" = "Mlk"`). A failed test leave
 a picture in `hush-results/`, and with `--record` a movie of the run. Hush waits for each step to
 settle instead of sleeping, so a test is as fast as the app and doesn't flake on timing. On Linux,
 tests run on Hush's hidden display, which works on a CI runner with no screen.
+
+An agent can write the test by doing the task once. Every step a session runs is kept with its
+refs turned into what the outline showed, so `hush save` turns the run into a test that replays
+with no model and no tokens:
+
+```sh
+hush act Notes 'click b1' 'type t2 "Groceries"'
+hush save Notes notes.hush     # app Notes · click button "New Note" · type textarea[1] "Groceries"
+hush test notes.hush
+```
 
 ## Platforms
 

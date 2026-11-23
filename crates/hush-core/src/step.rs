@@ -238,6 +238,112 @@ impl Step {
     }
 }
 
+impl Step {
+    /// Writes the step back as a line that parses to the same step, with
+    /// each ref written as `name` says (a locator, to replay it elsewhere).
+    pub fn write(&self, name: &mut dyn FnMut(Ref) -> String) -> String {
+        let target = |target: &Target, name: &mut dyn FnMut(Ref) -> String| match target {
+            Target::Ref(r) => name(*r),
+            Target::Point(x, y) => format!("{x},{y}"),
+        };
+        match self {
+            Step::Click {
+                target: at,
+                button,
+                count,
+            } => {
+                let verb = match (button, count) {
+                    (Button::Right, _) => "right",
+                    (Button::Left, 2) => "double",
+                    (Button::Left, _) => "click",
+                };
+                format!("{verb} {}", target(at, name))
+            }
+            Step::Set { r, value } => format!("set {} {}", name(*r), quote(value)),
+            Step::Type {
+                into: Some(r),
+                text,
+            } => format!("type {} {}", name(*r), quote(text)),
+            Step::Type { into: None, text } => format!("type {}", quote(text)),
+            Step::Key { combo, repeat: 1 } => format!("key {combo}"),
+            Step::Key { combo, repeat } => format!("key {combo} x{repeat}"),
+            Step::Menu { path } => {
+                let parts: Vec<String> = path
+                    .iter()
+                    .map(|part| {
+                        // A title with `>` in it can't be written: the
+                        // parser splits on every `>`.
+                        if part.starts_with('"') || part.trim() != part {
+                            quote(part)
+                        } else {
+                            part.clone()
+                        }
+                    })
+                    .collect();
+                format!("menu {}", parts.join(" > "))
+            }
+            Step::Pick { r, option } => format!("pick {} {}", name(*r), quote(option)),
+            Step::Select { r } => format!("select {}", name(*r)),
+            Step::Focus { r } => format!("focus {}", name(*r)),
+            Step::Show { r } => format!("show {}", name(*r)),
+            Step::Scroll {
+                target: at,
+                direction,
+                amount,
+            } => {
+                let direction = match direction {
+                    Direction::Up => "up",
+                    Direction::Down => "down",
+                    Direction::Left => "left",
+                    Direction::Right => "right",
+                };
+                format!("scroll {} {direction} {amount}", target(at, name))
+            }
+            Step::Drag { from, to } => {
+                let from = target(from, name);
+                format!("drag {from} to {}", target(to, name))
+            }
+            Step::Wait { until, within } => {
+                let mut element = |element: &Element| match element {
+                    Element::Ref(r) => name(*r),
+                    Element::Find(locator) => locator.to_string(),
+                };
+                let condition = match until {
+                    Condition::Settled => "idle".to_owned(),
+                    Condition::Exists(e) => element(e),
+                    Condition::Gone(e) => format!("gone {}", element(e)),
+                    Condition::Text(text) => format!("text {}", quote(text)),
+                    Condition::Value(e, value) => format!("{} = {}", element(e), quote(value)),
+                    Condition::Elapsed(time) => format!("{}ms", time.as_millis()),
+                };
+                if *within == DEFAULT_WAIT {
+                    format!("wait {condition}")
+                } else {
+                    format!("wait {condition} within {}ms", within.as_millis())
+                }
+            }
+            Step::Lane => "lane".into(),
+            Step::Unlane => "unlane".into(),
+        }
+    }
+}
+
+/// `text` in double quotes, with the escapes `text()` undoes.
+fn quote(text: &str) -> String {
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 struct Parser<'r, 'a> {
     resolve: &'r mut Resolve<'a>,
 }
@@ -705,6 +811,46 @@ mod tests {
         assert_eq!(
             (found.to_string(), value.as_str(), within),
             (r#"checkbox "Wrap""#.into(), "on", Duration::from_secs(2))
+        );
+    }
+
+    #[test]
+    fn written_steps_parse_back_to_the_same_step() {
+        let lines = [
+            "click b3",
+            "double 120,48.5",
+            "right b1",
+            r#"set t2 "42""#,
+            r#"type t1 "say \"hi\"\n""#,
+            r#"type "hello world""#,
+            "key cmd+s",
+            "key down x3",
+            "menu File > Export > PDF…",
+            r#"pick p1 "Helvetica Neue""#,
+            "select i2",
+            "focus t1",
+            "show i9",
+            "scroll e2 up 5",
+            "drag i2 to 30,40",
+            "wait gone e4 within 10000ms",
+            r#"wait text "Saved""#,
+            r#"wait t1 = "Ada""#,
+            r#"wait sheet "Saved""#,
+            "wait 250ms",
+            "wait idle",
+            "lane",
+            "unlane",
+        ];
+        for line in lines {
+            let step = Step::parse(line).unwrap();
+            let written = step.write(&mut |r| r.to_string());
+            assert_eq!(written, line);
+            assert_eq!(Step::parse(&written).unwrap(), step, "{line}");
+        }
+        let step = Step::parse("click b3").unwrap();
+        assert_eq!(
+            step.write(&mut |_| r#"button "Save""#.into()),
+            r#"click button "Save""#
         );
     }
 
