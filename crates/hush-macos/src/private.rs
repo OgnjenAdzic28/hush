@@ -47,6 +47,35 @@ pub(crate) fn window_id(window: &Element) -> Option<u32> {
     (status == AXError::Success && id != 0).then_some(id)
 }
 
+type FrontProcess = unsafe extern "C" fn(*mut u8) -> i32;
+type ProcessPid = unsafe extern "C" fn(*const u8, *mut i32) -> i32;
+
+/// The app the window server has in front: the one the user switched to.
+/// Hush's synthetic focus (`SyntheticFocus`) never changes it, and raising
+/// a window doesn't either, unlike the front-to-back window list. `None`
+/// when the symbols are missing.
+pub(crate) fn front_pid() -> Option<i32> {
+    static FUNCTIONS: OnceLock<Option<(FrontProcess, ProcessPid)>> = OnceLock::new();
+    let (front, pid_of) = (*FUNCTIONS.get_or_init(|| {
+        let front = symbol(SKYLIGHT, c"_SLPSGetFrontProcess")?;
+        let pid_of = symbol(APPLICATION_SERVICES, c"GetProcessPID")?;
+        // SAFETY: both take a ProcessSerialNumber (8 bytes) as declared,
+        // on every macOS since 10.x.
+        unsafe {
+            Some((
+                std::mem::transmute::<*mut c_void, FrontProcess>(front),
+                std::mem::transmute::<*mut c_void, ProcessPid>(pid_of),
+            ))
+        }
+    }))?;
+    let mut psn = [0u8; 8];
+    let mut pid = 0;
+    // SAFETY: `psn` has room for a ProcessSerialNumber; `pid` is a valid
+    // out-pointer.
+    let found = unsafe { front(psn.as_mut_ptr()) == 0 && pid_of(psn.as_ptr(), &mut pid) == 0 };
+    (found && pid > 0).then_some(pid)
+}
+
 // ---------------------------------------------------------------------------
 // SkyLight: background clicks, synthetic key window, window capture.
 

@@ -29,7 +29,7 @@ use objc2::runtime::AnyObject;
 use objc2_core_foundation::{CFRetained, CGPoint};
 
 use crate::ax::Element;
-use crate::{act, apps, cf};
+use crate::{act, apps, cf, private};
 
 /// How long macOS may take to bring the display online, move it, or show a
 /// window there. Measured: about 1 s for the display, under 100 ms for a move.
@@ -158,9 +158,10 @@ pub(crate) fn user_switched_to(pid: i32) {
     thread::spawn(move || {
         // Hush's own synthetic focus (`private::SyntheticFocus`) makes an
         // app believe it is active without the window server putting it in
-        // front; only a real switch puts it there. The deadline covers the
-        // window server reordering after the app hears it is active.
-        if !wait(SWITCH, || apps::frontmost_pid() == Some(pid)) {
+        // front; only a real switch puts it there. Not the front window:
+        // `to_top` raises lane windows above the user's. The deadline covers
+        // the window server catching up after the app hears it is active.
+        if !wait(SWITCH, || private::front_pid() == Some(pid)) {
             return;
         }
         if let Ok(mut lane) = state()
