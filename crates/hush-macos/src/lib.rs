@@ -57,8 +57,8 @@ pub use platform::MacPlatform;
 #[cfg(target_os = "macos")]
 pub use seen::Handle;
 
-/// Hides the apps this process moved to the lane. For a process that is
-/// about to exit without dropping its platform (a signal).
+/// Sends the windows this process moved to the lane back. For a process
+/// that is about to exit without dropping its platform (a signal).
 #[cfg(target_os = "macos")]
 pub fn release_lane() {
     lane::release();

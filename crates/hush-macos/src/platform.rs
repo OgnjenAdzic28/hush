@@ -272,18 +272,25 @@ impl Platform for MacPlatform {
     }
 
     fn perform(&self, app: &AppInfo, window: &WindowInfo, op: Op<'_, Handle>) -> Result<()> {
-        if matches!(op, Op::Lane) {
+        if matches!(op, Op::Lane | Op::Unlane) {
             let pid = app
                 .pid
                 .map(|p| p as i32)
                 .ok_or_else(|| Error::NotFound(format!("{} isn't running", app.name)))?;
             let element = self.window_element(app, window)?;
-            return crate::lane::park(pid, &element);
+            if matches!(op, Op::Unlane) {
+                return crate::lane::restore(pid, &element);
+            }
+            return crate::lane::park(pid, &element, || {
+                let listed = self.windows(app)?;
+                let cache = lock(&self.windows);
+                Ok(listed
+                    .iter()
+                    .filter_map(|info| cache.get(&info.id).map(|(_, element)| element.clone()))
+                    .collect())
+            });
         }
         let window_element = self.window_element(app, window)?;
-        if matches!(op, Op::Unlane) {
-            return crate::lane::restore(&window_element);
-        }
         let target = act::Target {
             app,
             window,

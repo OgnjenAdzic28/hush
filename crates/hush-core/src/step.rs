@@ -90,9 +90,10 @@ pub enum Step {
         from: Target,
         to: Target,
     },
-    /// Move only the target window to Hush's off-screen display.
+    /// Move the window to Hush's lane: a display the user can't see, where
+    /// it renders and takes pointer input without being on screen.
     Lane,
-    /// Restore the target window to its position before entering the lane.
+    /// Put the window back where it was before `Lane`.
     Unlane,
 }
 
@@ -103,7 +104,7 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
 scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
-lane (move only the target window off screen) · unlane (restore that window)";
+lane (move the window off screen, where it still renders and takes clicks) · unlane (put it back)";
 
 impl Step {
     pub fn parse(line: &str) -> Result<Step, String> {

@@ -24,6 +24,17 @@ impl Drop for Fixture {
 }
 
 pub fn launch(visible: bool) -> Fixture {
+    start(visible, false)
+}
+
+/// The fixture as if the user opened it: a lane tool such as Doorman tells
+/// agent-launched apps by the agent's environment, and without it leaves
+/// the fixture alone, the way it leaves the user's own apps.
+pub fn launch_as_user() -> Fixture {
+    start(false, true)
+}
+
+fn start(visible: bool, as_user: bool) -> Fixture {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
     let source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../bench/fixture/HushFixture.swift");
@@ -53,7 +64,14 @@ pub fn launch(visible: bool) -> Fixture {
     let _ = std::fs::remove_file(&log);
     // Through LaunchServices in the background, the way agents open apps. A
     // child process started directly may activate itself at launch.
-    let opened = Command::new("/usr/bin/open")
+    let mut open = Command::new("/usr/bin/open");
+    if as_user {
+        open.env_clear();
+        if let Some(home) = std::env::var_os("HOME") {
+            open.env("HOME", home);
+        }
+    }
+    let opened = open
         .args(["-g", "-n"])
         .args(if visible {
             &["--env", "FIXTURE_VISIBLE=1"][..]

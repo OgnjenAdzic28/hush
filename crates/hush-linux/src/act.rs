@@ -28,6 +28,7 @@ const IGNORED: &str = "this field doesn't take text through accessibility, and H
 pub(crate) const IGNORED_UNFOCUSED: &str =
     "this field doesn't take text through accessibility; focus it first (focus REF), then type";
 
+pub(crate) const STAYS_IN_LANE: &str = "on Linux an app Hush started lives on its own display until it quits; quit it and open it yourself to have it on your screen";
 pub(crate) const NEEDS_LANE: &str = "keys and pointer input on Linux only go to apps Hush runs on its own display, so they can't reach yours; for this app use click, set and type on refs";
 
 pub(crate) async fn perform(
@@ -56,6 +57,9 @@ pub(crate) async fn perform(
         Op::Menu(path) => menu(bus, window, path).await,
         // Apps Hush started already run on its display.
         Op::Lane if in_lane => Ok(()),
+        // A window on the user's display was never moved.
+        Op::Unlane if !in_lane => Ok(()),
+        Op::Unlane => Err(Error::Unsupported(STAYS_IN_LANE.into())),
         // On the lane the platform sends these itself (`input.rs`).
         Op::Lane | Op::Key { .. } | Op::Click { .. } | Op::Scroll { .. } => {
             Err(Error::Unsupported(NEEDS_LANE.into()))

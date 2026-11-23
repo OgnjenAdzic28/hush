@@ -15,9 +15,9 @@ use crate::timeline::{Played, Timed};
 /// alone; a platform that can't do that for some app returns an error.
 #[derive(Debug)]
 pub enum Op<'a, H> {
-    /// Move only the target window to the platform's off-screen lane.
+    /// Move the window to the platform's off-screen lane.
     Lane,
-    /// Restore only the target window from the lane.
+    /// Put the window back where it was before `Lane`.
     Unlane,
     Press(&'a H),
     ShowMenu(&'a H),

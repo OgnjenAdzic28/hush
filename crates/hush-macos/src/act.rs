@@ -45,8 +45,8 @@ pub(crate) fn perform(target: &Target<'_>, op: Op<'_, Element>) -> Result<()> {
     let pid = target.pid()?;
     let app_element = Element::application(pid);
     match op {
-        // The platform keeps the target window's saved lane position.
-        Op::Lane | Op::Unlane => Err(Error::Unsupported("lane is handled by the platform".into())),
+        // The platform handles them: they need the app's other windows.
+        Op::Lane | Op::Unlane => Err(Error::Unsupported("lane needs the whole app".into())),
         Op::Press(element) => perform_action(element, "AXPress"),
         Op::ShowMenu(element) => perform_action(element, "AXShowMenu"),
         Op::ScrollIntoView(element) => perform_action(element, "AXScrollToVisible"),

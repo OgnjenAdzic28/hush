@@ -8,8 +8,8 @@
 //! command on one app (a timeline) doesn't hold up commands on another. The
 //! main thread is kept for work that must run there (AppleScript).
 //!
-//! The host exits after `IDLE` with no connection open, restoring the windows it
-//! moved to the lane.
+//! The host exits after `IDLE` with no connection open, sending the windows
+//! it moved to the lane back.
 
 use std::collections::HashMap;
 use std::io::{BufReader, Write};
@@ -196,8 +196,8 @@ fn watch_idle<P: Shared>(host: Arc<Host<P>>) {
     });
 }
 
-/// Leaves for good: frees the socket and hides the apps in the lane before
-/// the lane display goes away with the process.
+/// Leaves for good: frees the socket and sends the lane's windows back
+/// before the lane display goes away with the process.
 fn exit(path: &PathBuf) -> ! {
     let _ = std::fs::remove_file(path);
     #[cfg(target_os = "macos")]
