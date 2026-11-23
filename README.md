@@ -2,6 +2,8 @@
 
 **The fastest computer use for AI agents.**
 
+[![OgnjenAdzic28/hush MCP server](https://glama.ai/mcp/servers/OgnjenAdzic28/hush/badges/score.svg)](https://glama.ai/mcp/servers/OgnjenAdzic28/hush)
+
 https://github.com/user-attachments/assets/d415d27b-6906-4f0c-a700-dbc79e826e34
 
 Hush lets any agent see and drive the apps on your computer, in the background, while you keep working.
