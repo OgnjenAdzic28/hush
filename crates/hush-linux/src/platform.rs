@@ -270,7 +270,9 @@ impl Platform for LinuxPlatform {
                     Typed::NoTarget | Typed::Ignored { focused: true } => {
                         self.send(window, |input| input.text(text))
                     }
-                    Typed::Ignored { focused: false } => Err(Error::Failed(act::IGNORED.into())),
+                    Typed::Ignored { focused: false } => {
+                        Err(Error::Failed(act::IGNORED_UNFOCUSED.into()))
+                    }
                 }
             }
             op => block_on(act::perform(&bus, &element, in_lane, op)),

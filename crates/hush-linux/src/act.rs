@@ -21,8 +21,12 @@ const SHOW_MENU: [&str; 5] = ["showmenu", "show menu", "menu", "popup", "press"]
 const FOCUS_ON_USER_DISPLAY: &str = "focusing an element raises the app's window on Linux, which would take your focus; use set or type with its ref instead";
 
 const NO_TARGET: &str = "nothing editable has focus in this window; give type a ref";
-pub(crate) const IGNORED: &str =
-    "the app accepted the text but didn't insert it; focus the field, then type";
+/// The field didn't take the text through accessibility, on an app on the
+/// person's desktop, where Hush sends no key presses.
+const IGNORED: &str = "this field doesn't take text through accessibility, and Hush only types key presses into apps on its own display; use set on it, or quit the app and observe it again so Hush starts it there";
+/// The same on Hush's display, for a field without the keyboard focus.
+pub(crate) const IGNORED_UNFOCUSED: &str =
+    "this field doesn't take text through accessibility; focus it first (focus REF), then type";
 
 pub(crate) const NEEDS_LANE: &str = "keys and pointer input on Linux only go to apps Hush runs on its own display, so they can't reach yours; for this app use click, set and type on refs";
 
