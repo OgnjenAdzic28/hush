@@ -90,17 +90,147 @@ pub(crate) fn command<P: Platform>(
                 image.jpeg.len() / 1024
             ))
         }
+        "test" => run_tests(engine, &flags),
         other => Err(format!("unknown command '{other}'; run hush --help")),
     }
 }
 
 const DEFAULT_OUT: &str = "hush-see.jpg";
 
+/// Where `hush test` keeps what a failed test leaves behind.
+const DEFAULT_RESULTS: &str = "hush-results";
+
+/// The file ending of a test file, for running every test in a folder.
+const TEST_ENDING: &str = "hush";
+
+/// Runs test files (or every `.hush` file in a folder), each in a fresh
+/// session. A failed test leaves the window's outline, a picture and, with
+/// `--record`, a movie in the results folder. Any failure fails the command.
+fn run_tests<P: Platform>(engine: &mut Engine<P>, flags: &Flags) -> Result<String, String> {
+    let files = test_files(&flags.positional)?;
+    let results = Path::new(flags.value("--out").unwrap_or(DEFAULT_RESULTS));
+    let started = std::time::Instant::now();
+    let mut out = String::new();
+    let mut failed = 0;
+    for file in &files {
+        let name = file
+            .file_stem()
+            .map_or_else(|| "test".into(), |stem| stem.to_string_lossy().into_owned());
+        let shown = file
+            .file_name()
+            .map_or_else(|| name.clone(), |n| n.to_string_lossy().into_owned());
+        let source = std::fs::read_to_string(file)
+            .map_err(|e| format!("couldn't read {}: {e}", file.display()))?;
+        let movie = flags.switch("--record").then(|| {
+            results
+                .join(format!("{name}.mp4"))
+                .to_string_lossy()
+                .into_owned()
+        });
+        let run = match engine.test(&source, movie.as_deref()) {
+            Ok(run) => run,
+            Err(error) => {
+                failed += 1;
+                out.push_str(&format!("FAIL {shown} · {error}\n"));
+                continue;
+            }
+        };
+        let Some(failure) = run.failure else {
+            out.push_str(&format!(
+                "ok   {shown} · {} lines · {:.2} s\n",
+                run.of,
+                run.elapsed.as_secs_f64()
+            ));
+            continue;
+        };
+        failed += 1;
+        out.push_str(&format!(
+            "FAIL {shown}:{} `{}` · {:.2} s\n     {}\n",
+            failure.line,
+            failure.text,
+            run.elapsed.as_secs_f64(),
+            failure.reason
+        ));
+        let _ = std::fs::create_dir_all(results);
+        let mut left = Vec::new();
+        if let Some(outline) = &failure.outline {
+            let path = results.join(format!("{name}.txt"));
+            if std::fs::write(&path, outline).is_ok() {
+                left.push(path.display().to_string());
+            }
+        }
+        if let Some(picture) = &failure.picture {
+            let path = results.join(format!("{name}.jpg"));
+            if std::fs::write(&path, &picture.jpeg).is_ok() {
+                left.push(path.display().to_string());
+            }
+        }
+        if let Some(movie) = &failure.movie {
+            left.push(movie.clone());
+        }
+        if !left.is_empty() {
+            out.push_str(&format!("     {}\n", left.join(" · ")));
+        }
+    }
+    out.push_str(&format!(
+        "# {} test{} · {} · {:.2} s\n",
+        files.len(),
+        if files.len() == 1 { "" } else { "s" },
+        match failed {
+            0 => "all passed".to_owned(),
+            n => format!("{n} failed"),
+        },
+        started.elapsed().as_secs_f64()
+    ));
+    if failed == 0 { Ok(out) } else { Err(out) }
+}
+
+/// The test files named, with folders replaced by the `.hush` files in
+/// them, in name order.
+fn test_files(named: &[String]) -> Result<Vec<std::path::PathBuf>, String> {
+    if named.is_empty() {
+        return Err("test needs FILE or FOLDER; run hush --help".into());
+    }
+    let mut files = Vec::new();
+    for path in named.iter().map(Path::new) {
+        if !path.is_dir() {
+            files.push(path.to_path_buf());
+            continue;
+        }
+        let mut found: Vec<_> = std::fs::read_dir(path)
+            .map_err(|e| format!("couldn't read {}: {e}", path.display()))?
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .filter(|file| file.extension().is_some_and(|ending| ending == TEST_ENDING))
+            .collect();
+        if found.is_empty() {
+            return Err(format!("{} has no .{TEST_ENDING} files", path.display()));
+        }
+        found.sort();
+        files.extend(found);
+    }
+    Ok(files)
+}
+
 /// The arguments with an output path made absolute against `cwd`, for a
 /// daemon whose working directory is not the caller's: `see`'s (with a
 /// default), and `record --stop`'s when given.
 pub(crate) fn with_absolute_out(args: &[String], cwd: &Path) -> Vec<String> {
     let mut args = args.to_vec();
+    if args.first().map(String::as_str) == Some("test") {
+        // Every path: the test files and folders, and the results folder.
+        let mut after_out = false;
+        for arg in args.iter_mut().skip(1) {
+            if after_out || !arg.starts_with("--") {
+                *arg = cwd.join(&*arg).to_string_lossy().into_owned();
+            }
+            after_out = arg == "--out";
+        }
+        if !args.iter().any(|a| a == "--out") {
+            args.push("--out".into());
+            args.push(cwd.join(DEFAULT_RESULTS).to_string_lossy().into_owned());
+        }
+        return args;
+    }
     if args.first().map(String::as_str) == Some("record") {
         if let Some(at) = args.iter().position(|a| a == "--out")
             && at + 1 < args.len()
@@ -220,6 +350,26 @@ mod tests {
         assert_eq!(
             with_stdin_events(&untouched, "x".as_bytes()).unwrap(),
             untouched
+        );
+    }
+
+    #[test]
+    fn test_paths_and_the_results_folder_are_made_absolute() {
+        let cwd = Path::new("/work");
+        assert_eq!(
+            with_absolute_out(&strings(&["test", "a.hush", "--record", "/abs/b"]), cwd),
+            strings(&[
+                "test",
+                "/work/a.hush",
+                "--record",
+                "/abs/b",
+                "--out",
+                "/work/hush-results"
+            ])
+        );
+        assert_eq!(
+            with_absolute_out(&strings(&["test", "tests", "--out", "out"]), cwd),
+            strings(&["test", "/work/tests", "--out", "/work/out"])
         );
     }
 

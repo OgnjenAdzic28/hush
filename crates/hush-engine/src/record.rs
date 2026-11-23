@@ -69,6 +69,11 @@ impl<P: Platform> Engine<P> {
         })
     }
 
+    /// Whether a recording is running, of any window.
+    pub(crate) fn is_recording_any(&self) -> bool {
+        self.recording.is_some()
+    }
+
     /// Whether this window is being recorded.
     pub(crate) fn is_recording(&self, app: &AppInfo, window: &WindowInfo) -> bool {
         self.recording
@@ -84,6 +89,12 @@ impl<P: Platform> Drop for Engine<P> {
         if let Some(recording) = self.recording.take() {
             self.platform.record_cancel(recording.id);
         }
+    }
+}
+
+impl Recording {
+    pub(crate) fn id(&self) -> u64 {
+        self.id
     }
 }
 

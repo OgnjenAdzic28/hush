@@ -46,6 +46,30 @@ pub struct Line {
     pub tail: String,
 }
 
+impl Line {
+    /// The value the line shows after `=`: the text inside its quotes, or
+    /// the bare word (`on`, `40`). A value the outline clipped ends in `…`.
+    pub fn value(&self) -> Option<String> {
+        let shown = self.tail.strip_prefix(" = ")?;
+        if let Some((value, _)) = crate::locator::take_quoted(shown) {
+            return Some(value);
+        }
+        let end = shown.find(" [").unwrap_or(shown.len());
+        Some(shown[..end].to_owned())
+    }
+
+    /// Whether the line shows `wanted` as its value. A clipped value
+    /// matches every value that starts the same way.
+    pub fn shows_value(&self, wanted: &str) -> bool {
+        self.value().is_some_and(|shown| {
+            shown == wanted
+                || shown
+                    .strip_suffix('…')
+                    .is_some_and(|start| wanted.starts_with(start))
+        })
+    }
+}
+
 /// A snapshot as the agent sees it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct View {

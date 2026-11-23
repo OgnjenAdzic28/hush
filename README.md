@@ -73,6 +73,7 @@ act TextEdit ["type t1 \" Done.\"", "key cmd+s"]
 | `script` | Run AppleScript (in process, compiled once) or JXA |
 | `see` | A screenshot of one window or element, for what the outline can't show |
 | `record` | Film a window with an animated agent cursor |
+| `hush test` | Run desktop tests written as text (CLI) |
 
 Steps: `click REF|X,Y`, `double REF`, `right REF`, `set REF VALUE`, `type [REF] TEXT`,
 `key COMBO [xN]`, `menu A > B`, `pick REF OPTION`, `select REF`, `focus REF`,
@@ -169,6 +170,30 @@ hush record Notes
 hush act Notes 'click b2' 'type t1 "Groceries"'
 hush record Notes --stop --label Claude --out demo.mp4
 ```
+
+## Desktop tests
+
+A test is a text file: the app, the steps, and `expect` lines that check the window. It names
+elements the way the outline shows them, so it runs in any session, on any machine, with no model.
+
+```text
+# notes.hush
+app Notes
+click button "New Note"
+type textarea[1] "Groceries"
+expect text "Groceries"
+expect button "Delete"
+```
+
+```sh
+hush test notes.hush           # or a folder: hush test tests/desktop
+```
+
+Each file runs in a fresh session and stops at its first failure, saying what the window shows
+instead (`expected = "Milk", but t2 field "Title" = "Mlk"`). A failed test leaves its outline and
+a picture in `hush-results/`, and with `--record` a movie of the run. Hush waits for each step to
+settle instead of sleeping, so a test is as fast as the app and doesn't flake on timing. On Linux,
+tests run on Hush's hidden display, which works on a CI runner with no screen.
 
 ## Platforms
 

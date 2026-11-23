@@ -152,7 +152,12 @@ fn handle<P: Shared>(host: &Host<P>, stream: UnixStream) {
                 .collect()
         })
         .unwrap_or_default();
-    let engine = shell_engine(host, &args);
+    // A test runs in a session of its own, so it neither sees nor disturbs
+    // the refs and diffs of the shell commands.
+    let engine = match args.first().map(String::as_str) {
+        Some("test") => Arc::new(Mutex::new(Engine::new(Arc::clone(&host.platform)))),
+        _ => shell_engine(host, &args),
+    };
     let result = cli::command(
         &mut engine.lock().unwrap_or_else(PoisonError::into_inner),
         &args,

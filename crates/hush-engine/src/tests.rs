@@ -566,3 +566,51 @@ fn an_index_past_the_last_match_is_not_there() {
         .unwrap();
     assert!(gone.starts_with("# 1/1 steps"), "{gone}");
 }
+
+#[test]
+fn a_test_file_runs_its_steps_and_checks_in_a_fresh_session() {
+    let mut engine = Engine::new(Fake::new());
+    engine.observe("Editor", ObserveOptions::default()).unwrap();
+    let run = engine
+        .test(
+            "# Saves the doc.\napp Editor\ntype field \"Name\" \"Q4\"\nexpect field \"Name\" = \"Q4\"\nclick button \"Save\"\nexpect sheet \"Saved\"\nexpect gone button \"Save\"\n",
+            None,
+        )
+        .unwrap();
+    assert!(run.failure.is_none(), "{run:?}");
+    assert_eq!((run.ran, run.of), (6, 6));
+    // The session the test started with was forgotten, so this is a first look.
+    let after = engine.observe("Editor", ObserveOptions::default()).unwrap();
+    assert!(after.starts_with("# Editor · window"), "{after}");
+}
+
+#[test]
+fn a_failed_check_says_what_the_window_shows_instead() {
+    let mut engine = Engine::new(Fake::new());
+    let run = engine
+        .test(
+            "app Editor\ntype field \"Name\" \"Q4\"\nexpect field \"Name\" = \"Q5\" within 100ms\nclick button \"Save\"\n",
+            None,
+        )
+        .unwrap();
+    let failure = run.failure.expect("the check fails");
+    assert_eq!(failure.line, 3);
+    assert_eq!(
+        failure.reason,
+        r#"expected = "Q5", but t1 field "Name" = "Q4""#
+    );
+    assert!(failure.outline.unwrap().contains("b1 button \"Save\""));
+    assert_eq!(run.ran, 2);
+    assert!(!engine.platform().ops().iter().any(|op| op == "Press(Save)"));
+}
+
+#[test]
+fn a_test_file_with_a_mistake_runs_nothing() {
+    let mut engine = Engine::new(Fake::new());
+    let error = engine
+        .test("app Editor\nclick b1\n", None)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("line 2"), "{error}");
+    assert!(engine.platform().ops().is_empty());
+}

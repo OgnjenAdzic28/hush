@@ -13,6 +13,7 @@ pub mod platform;
 pub mod refs;
 pub mod settle;
 pub mod step;
+pub mod test_file;
 pub mod timeline;
 
 #[cfg(test)]
