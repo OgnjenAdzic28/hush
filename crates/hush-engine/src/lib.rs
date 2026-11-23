@@ -3,6 +3,7 @@
 //! reads is produced here.
 
 mod act;
+mod journal;
 mod mirror;
 mod record;
 mod route;
@@ -43,6 +44,7 @@ pub struct Engine<P: Platform> {
     paces: HashMap<u32, Pace>,
     options: OutlineOptions,
     recording: Option<record::Recording>,
+    journal: journal::Journal,
 }
 
 impl<P: Platform> std::fmt::Debug for Engine<P> {
@@ -61,6 +63,7 @@ impl<P: Platform> Engine<P> {
             paces: HashMap::new(),
             options: OutlineOptions::default(),
             recording: None,
+            journal: journal::Journal::default(),
         }
     }
 
@@ -180,10 +183,19 @@ impl<P: Platform> Engine<P> {
         self.platform.script(&info, source, language)
     }
 
-    /// Forgets every window read and cancels a running recording, as if
-    /// the session were new.
+    /// What this session did since the last save, as a test file that
+    /// `hush test` replays in any session.
+    pub fn save(&mut self) -> Result<String> {
+        self.journal.take().ok_or_else(|| {
+            Error::NotFound("nothing was done in this session since the last save".into())
+        })
+    }
+
+    /// Forgets every window read, what was done, and a running recording,
+    /// as if the session were new.
     pub fn forget(&mut self) {
         self.mirrors.clear();
+        self.journal = journal::Journal::default();
         if let Some(recording) = self.recording.take() {
             self.platform.record_cancel(recording.id());
         }

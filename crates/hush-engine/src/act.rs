@@ -72,6 +72,7 @@ impl<P: Platform> Engine<P> {
                     });
             }
         }
+        let window_title = window;
         let (app, window) = self.target(app, window)?;
         let key = key(&app, &window);
         if let Entry::Vacant(entry) = self.mirrors.entry(key) {
@@ -90,10 +91,23 @@ impl<P: Platform> Engine<P> {
                 true => self.locate(&app, &window, &steps[i], &mut dirty),
                 false => Ok(step.clone()),
             };
-            match step.and_then(|step| self.run(&app, &window, &step, &mut dirty)) {
-                Ok(settled) => {
+            let before = self.mirror(&app, &window).current.lines.clone();
+            let ran = step.and_then(|step| {
+                let settled = self.run(&app, &window, &step, &mut dirty)?;
+                Ok((step, settled))
+            });
+            match ran {
+                Ok((step, settled)) => {
                     done += 1;
                     last_settle = settled.or(last_settle);
+                    let after = &self
+                        .mirrors
+                        .get(&key)
+                        .expect("act creates the mirror first")
+                        .current
+                        .lines;
+                    self.journal
+                        .note(&app.name, window_title, &step, &before, after);
                 }
                 Err(error) => {
                     stopped = Some((i, error));

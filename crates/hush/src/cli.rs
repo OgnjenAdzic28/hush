@@ -91,6 +91,26 @@ pub(crate) fn command<P: Platform>(
             ))
         }
         "test" => run_tests(engine, &flags),
+        "save" => {
+            flags.app()?;
+            let path = flags
+                .positional
+                .get(1)
+                .ok_or("save needs APP FILE; the file gets a test hush test can run")?;
+            let text = engine.save().map_err(|e| e.to_string())?;
+            std::fs::write(path, &text).map_err(|e| format!("couldn't write {path}: {e}"))?;
+            let steps = text
+                .lines()
+                .filter(|line| {
+                    !line.starts_with('#')
+                        && !line.starts_with("app ")
+                        && !line.starts_with("window")
+                })
+                .count();
+            Ok(format!(
+                "{path} · {steps} steps · run it with hush test {path}\n"
+            ))
+        }
         other => Err(format!("unknown command '{other}'; run hush --help")),
     }
 }
@@ -216,6 +236,12 @@ fn test_files(named: &[String]) -> Result<Vec<std::path::PathBuf>, String> {
 /// default), and `record --stop`'s when given.
 pub(crate) fn with_absolute_out(args: &[String], cwd: &Path) -> Vec<String> {
     let mut args = args.to_vec();
+    if args.first().map(String::as_str) == Some("save") {
+        if let Some(file) = args.get_mut(2) {
+            *file = cwd.join(&*file).to_string_lossy().into_owned();
+        }
+        return args;
+    }
     if args.first().map(String::as_str) == Some("test") {
         // Every path: the test files and folders, and the results folder.
         let mut after_out = false;
