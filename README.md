@@ -75,7 +75,7 @@ act TextEdit ["type t1 \" Done.\"", "key cmd+s"]
 Steps: `click REF|X,Y`, `double REF`, `right REF`, `set REF VALUE`, `type [REF] TEXT`,
 `key COMBO [xN]`, `menu A > B`, `pick REF OPTION`, `select REF`, `focus REF`,
 `scroll REF up|down|left|right [N]`, `show REF`, `drag REF|X,Y to REF|X,Y`,
-`wait gone REF | REF | text "T" | 500ms [within 10s]`, `lane`.
+`wait gone REF | REF | text "T" | 500ms [within 10s]`, `lane`, `unlane`.
 
 Timeline events, one per line: `MS down KEY`, `MS up KEY`, `MS tap KEY [HOLD]`, `MS down X,Y`,
 `MS move X,Y`, `MS up X,Y`, `MS tap X,Y [HOLD]`. Hush plays them on a real-time thread, under a
@@ -144,10 +144,10 @@ Ten sessions hammering one host: 500 calls in 2.2 s, zero errors, observe in 48 
 
 ## The lane
 
-Agents don't need your screen. The `lane` step moves an app's windows onto Hush's lane, a virtual
-display nobody can see, parked off a corner of your main display where the pointer can't reach.
-Windows there still render, take clicks and keys, and can be captured. When the host exits, apps in
-the lane are hidden first, so nothing ever lands on your screen.
+Agents don't need your screen. The `lane` step moves a window onto Hush's lane, a virtual display
+nobody can see, parked off a corner of your main display where the pointer can't reach. Windows
+there still render, take clicks and keys, and can be captured. Only that window moves, and it comes
+back to where it was on `unlane`, the moment you switch to its app, or when the host exits.
 
 On Linux the lane is a hidden X server that Hush starts for itself. Every app an agent opens runs
 there from the start, whether your desktop is X11 or Wayland.

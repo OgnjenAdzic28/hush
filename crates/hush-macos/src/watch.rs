@@ -289,6 +289,7 @@ unsafe extern "C-unwind" fn callback(
             let (element, notification) =
                 unsafe { (CFRetained::retain(element), notification.as_ref()) };
             let found = if notification.to_string() == "AXApplicationActivated" {
+                crate::lane::user_switched_to(*pid);
                 // The element is the app; its windows are on screen now.
                 Element::from_raw(element).elements("AXWindows")
             } else {

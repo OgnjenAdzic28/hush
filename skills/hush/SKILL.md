@@ -76,7 +76,7 @@ session, so refs from one command work in the next.
 | `scroll REF up\|down\|left\|right [N]` | scroll a list or page |
 | `drag A to B` | refs or X,Y; dragging onto a ref takes its place in a list |
 | `wait REF`, `wait gone REF`, `wait text "T"` | wait for something to appear or go (default 5 s; add `within 30s` for longer) |
-| `lane` | move the app's windows off screen, where they still render and take input |
+| `lane`, `unlane` | move the window off screen, where it still renders and takes input; put it back |
 
 ## The other commands
 
