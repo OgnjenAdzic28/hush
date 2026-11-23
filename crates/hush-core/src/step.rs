@@ -153,7 +153,13 @@ impl Step {
                 },
                 // A locator that names nothing here, with text after it, is
                 // a mistake worth reporting rather than text to type.
-                Err(error) if Locator::parse(rest).is_some_and(|(_, after)| !after.is_empty()) => {
+                // `field[2] "Ada"` reads as a locator with nothing after it,
+                // but its quoted part is the value, so it counts too.
+                Err(error)
+                    if Locator::parse(rest).is_some_and(|(locator, after)| {
+                        !after.is_empty() || locator.nth.is_some()
+                    }) =>
+                {
                     return Err(error);
                 }
                 _ => Step::Type {
@@ -628,6 +634,15 @@ mod tests {
                 .unwrap_err()
                 .contains("needs a window")
         );
+        // A missing element is reported, never typed as text.
+        let mut missing = |_: &Locator| Err("not here".to_owned());
+        for line in [r#"type field[2] "Ada""#, r#"type field "Name" "Ada""#] {
+            assert_eq!(
+                Step::parse_with(line, &mut missing).unwrap_err(),
+                "not here",
+                "{line}"
+            );
+        }
     }
 
     #[test]
