@@ -147,7 +147,12 @@ pub(crate) async fn type_text(
     };
     let (states, count) = futures_util::join!(bus.states(&target), bus.character_count(&target));
     let focused = states.is_ok_and(|s| s.has(state::FOCUSED));
-    let count = count.map_err(refuse)?;
+    // A focused field without the text interfaces (Chrome's address bar)
+    // still takes key presses.
+    let count = match count.map_err(refuse) {
+        Err(Error::Unsupported(_)) if focused => return Ok(Typed::Ignored { focused }),
+        count => count?,
+    };
     // At the caret only where the user would type: in the focused field.
     // An unfocused field's caret sits at 0, and text typed into a field by
     // ref is meant to go after what is there.
@@ -155,12 +160,14 @@ pub(crate) async fn type_text(
         true => bus.caret(&target).await.ok().flatten(),
         false => None,
     };
-    refused(
-        bus.insert_text(&target, caret.unwrap_or(count), text)
-            .await
-            .map_err(refuse)?,
-        "insert the text",
-    )?;
+    match bus
+        .insert_text(&target, caret.unwrap_or(count), text)
+        .await
+        .map_err(refuse)
+    {
+        Err(Error::Unsupported(_)) if focused => return Ok(Typed::Ignored { focused }),
+        inserted => refused(inserted?, "insert the text")?,
+    }
     let changed = match bus.character_count(&target).await {
         Ok(after) => after != count,
         // Can't tell; the app said it inserted the text.
