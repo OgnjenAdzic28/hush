@@ -34,6 +34,7 @@ usage:
   hush see APP [--window W] [--ref REF] [--width N] [--out FILE]
   hush record APP [--window W]              start recording the window (acts leave a cursor)
   hush record APP --stop [--label L] [--out FILE.mp4]
+  hush test FILE|FOLDER... [--record] [--out DIR]  run .hush test files, each in a fresh session
 
 steps: ";
 

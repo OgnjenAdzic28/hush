@@ -7,6 +7,7 @@ mod mirror;
 mod record;
 mod route;
 mod target;
+mod testing;
 mod timeline;
 mod wait;
 mod windowless;
@@ -20,6 +21,7 @@ use hush_core::{
 };
 
 use mirror::Mirror;
+pub use testing::{Failure, TestRun};
 
 /// Token budget for a full outline before its largest parts are folded
 /// (about one screenshot's worth). Folded parts can be opened with `focus`.
@@ -176,6 +178,34 @@ impl<P: Platform> Engine<P> {
             frontmost: false,
         });
         self.platform.script(&info, source, language)
+    }
+
+    /// Forgets every window read and cancels a running recording, as if
+    /// the session were new.
+    pub fn forget(&mut self) {
+        self.mirrors.clear();
+        if let Some(recording) = self.recording.take() {
+            self.platform.record_cancel(recording.id());
+        }
+    }
+
+    /// The current outline lines of a window, read now.
+    pub(crate) fn lines(
+        &mut self,
+        app: &str,
+        window: Option<&str>,
+    ) -> Result<Vec<hush_core::outline::Line>> {
+        let (app, window) = self.target(app, window)?;
+        let snapshot = self.platform.read(&app, &window)?;
+        let mirror = match self.mirrors.entry(key(&app, &window)) {
+            Entry::Occupied(entry) => {
+                let mirror = entry.into_mut();
+                mirror.update(snapshot, &self.options);
+                mirror
+            }
+            Entry::Vacant(entry) => entry.insert(Mirror::new(snapshot, &self.options)),
+        };
+        Ok(mirror.current.lines.clone())
     }
 
     pub fn platform(&self) -> &P {

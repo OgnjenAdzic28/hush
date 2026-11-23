@@ -109,6 +109,26 @@ When several match, add which one: `button[2] "OK"`, or `field[1]` for an unname
 
 - **Recording a demo**: `hush record APP`, act, then `hush record APP --stop --out demo.mp4`.
 
+## Tests
+
+To test a desktop app, write a `.hush` file: an `app NAME` line, steps as in `act`, and
+`expect` lines that check the window. Name elements as the outline shows them, never by ref
+(refs only work in your session):
+
+```text
+app Notes
+click button "New Note"
+type textarea[1] "Groceries"
+expect text "Groceries"
+expect field "Title" = "Groceries"
+expect gone sheet "Untitled"
+```
+
+Run it with `hush test notes.hush` (or a folder of them). Each file runs in a fresh session and
+stops at its first failure with what the window shows instead; the outline and a picture of the
+failure are in `hush-results/`, plus a movie with `--record`. `window "Title"` switches to another
+window of the app. `expect` takes what `wait` takes, plus `ELEMENT = VALUE`.
+
 ## Good habits
 
 - Read before acting, then trust the diffs. A second `observe` right after an `act` is wasted.

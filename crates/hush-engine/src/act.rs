@@ -35,6 +35,16 @@ impl<P: Platform> Engine<P> {
     /// Runs `steps` (one command each, see `hush_core::step::SYNTAX`) on the
     /// window and returns a report: steps done, time, and the change.
     pub fn act(&mut self, app: &str, window: Option<&str>, steps: &[String]) -> Result<String> {
+        self.batch(app, window, steps).map(|batch| batch.report)
+    }
+
+    /// `act`, also saying which step stopped the batch and why.
+    pub(crate) fn batch(
+        &mut self,
+        app: &str,
+        window: Option<&str>,
+        steps: &[String],
+    ) -> Result<Batch> {
         // Every step's syntax is checked before any runs. A step that names
         // elements by locator is parsed again just before it runs, against
         // the window as the earlier steps left it.
@@ -54,7 +64,12 @@ impl<P: Platform> Engine<P> {
         if window.is_none() && parsed.iter().all(|s| matches!(s, Step::Menu { .. })) {
             let found = self.find_app(app)?;
             if self.platform.windows(&found)?.is_empty() {
-                return self.menus_without_window(&found, &parsed, steps);
+                return self
+                    .menus_without_window(&found, &parsed, steps)
+                    .map(|report| Batch {
+                        report,
+                        stopped: None,
+                    });
             }
         }
         let (app, window) = self.target(app, window)?;
@@ -81,11 +96,7 @@ impl<P: Platform> Engine<P> {
                     last_settle = settled.or(last_settle);
                 }
                 Err(error) => {
-                    stopped = Some(format!(
-                        "stopped at step {} (`{}`): {error}",
-                        i + 1,
-                        steps[i]
-                    ));
+                    stopped = Some((i, error));
                     break;
                 }
             }
@@ -100,8 +111,13 @@ impl<P: Platform> Engine<P> {
             let _ = write!(out, " · {settle}");
         }
         out.push('\n');
-        if let Some(stopped) = stopped {
-            let _ = writeln!(out, "# {stopped}");
+        if let Some((i, error)) = &stopped {
+            let _ = writeln!(
+                out,
+                "# stopped at step {} (`{}`): {error}",
+                i + 1,
+                steps[*i]
+            );
         }
         // A step may close the window (Save, OK, Close); the report of what
         // ran still matters more than the read that can't happen.
@@ -114,7 +130,10 @@ impl<P: Platform> Engine<P> {
                     "# window \"{}\" is gone ({error}); observe the app again",
                     window.title
                 );
-                return Ok(out);
+                return Ok(Batch {
+                    report: out,
+                    stopped,
+                });
             }
         };
         let mirror = self.mirrors.get_mut(&key).expect("mirror created above");
@@ -128,7 +147,10 @@ impl<P: Platform> Engine<P> {
             out.push_str(&diff.render());
         }
         mirror.mark_seen();
-        Ok(out)
+        Ok(Batch {
+            report: out,
+            stopped,
+        })
     }
 
     /// Runs one step. Returns how the app settled, when it was waited for.
@@ -463,6 +485,13 @@ impl<P: Platform> Engine<P> {
     }
 }
 
+/// What a batch did: the report an agent reads, and the index of the step
+/// that stopped it with the reason, if one did.
+pub(crate) struct Batch {
+    pub(crate) report: String,
+    pub(crate) stopped: Option<(usize, Error)>,
+}
+
 /// A step names a ref the mirror doesn't know (it appeared after the last
 /// read), so the window is read again before routing.
 fn needs_refresh<H: Clone + Eq + std::hash::Hash>(step: &Step, mirror: &Mirror<H>) -> bool {
@@ -499,6 +528,14 @@ fn met<H: Clone + Eq + std::hash::Hash>(until: &Condition, mirror: &Mirror<H>) -
                         .as_deref()
                         .is_some_and(|v| v.to_lowercase().contains(&wanted))
             })
+        }
+        Condition::Value(element, wanted) => {
+            let r = match element {
+                Element::Ref(r) => Some(*r),
+                Element::Find(locator) => locator.find(&mirror.current.lines).ok(),
+            };
+            r.and_then(|r| mirror.current.lines.iter().find(|line| line.r == r))
+                .is_some_and(|line| line.shows_value(wanted))
         }
         Condition::Settled | Condition::Elapsed(_) => true,
     }

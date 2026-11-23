@@ -45,6 +45,9 @@ pub enum Condition {
     Gone(Element),
     /// Some element's name or value contains the text.
     Text(String),
+    /// The element's value, as its outline line shows it (`= "Ada"`,
+    /// `= on`, `= 40`), is this.
+    Value(Element, String),
     Elapsed(Duration),
 }
 
@@ -112,7 +115,7 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 /// Syntax help for tool descriptions. Kept short: it rides on every request.
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
-scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
+scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|REF = V|text \"T\"|500ms [within 10s] · \
 lane (move the window off screen, where it still renders and takes clicks) · unlane (put it back) · \
 REF can also be an outline line's head: button \"Save\", field[2]";
 
@@ -383,14 +386,32 @@ fn wait(rest: &str) -> Result<Step, String> {
         "" | "idle" => Condition::Settled,
         "gone" => Condition::Gone(only_element(after)?),
         "text" => Condition::Text(text(after)),
+        _ if let Some((element, value)) = element_is_value(condition) => {
+            Condition::Value(element, value)
+        }
         _ => match duration(word) {
             Ok(elapsed) if after.is_empty() => Condition::Elapsed(elapsed),
             _ => Condition::Exists(only_element(condition).map_err(|_| {
-                format!("wait needs gone REF, REF, text \"T\" or a time, got '{condition}'")
+                format!(
+                    "wait needs gone REF, REF, REF = VALUE, text \"T\" or a time, got '{condition}'"
+                )
             })?),
         },
     };
     Ok(Step::Wait { until, within })
+}
+
+/// `REF = VALUE` or `LOCATOR = VALUE`, the value quoted or bare.
+fn element_is_value(condition: &str) -> Option<(Element, String)> {
+    let (element, rest) = match Locator::parse(condition) {
+        Some((locator, rest)) => (Element::Find(locator), rest),
+        None => {
+            let (word, rest) = split_word(condition);
+            (Element::Ref(Ref::parse(word)?), rest)
+        }
+    };
+    let value = rest.strip_prefix('=')?;
+    Some((element, text(value)))
 }
 
 /// A ref or a locator, left unresolved, and nothing after it.
@@ -662,6 +683,28 @@ mod tests {
                 direction: Direction::Up,
                 amount: 2
             }
+        );
+    }
+
+    #[test]
+    fn waits_for_a_value_by_ref_or_locator() {
+        assert_eq!(
+            Step::parse(r#"wait t1 = "Ada""#).unwrap(),
+            Step::Wait {
+                until: Condition::Value(Element::Ref(r("t1")), "Ada".into()),
+                within: DEFAULT_WAIT
+            }
+        );
+        let Step::Wait {
+            until: Condition::Value(Element::Find(found), value),
+            within,
+        } = Step::parse("wait checkbox \"Wrap\" = on within 2s").unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(
+            (found.to_string(), value.as_str(), within),
+            (r#"checkbox "Wrap""#.into(), "on", Duration::from_secs(2))
         );
     }
 
