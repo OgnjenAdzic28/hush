@@ -24,7 +24,7 @@ use hush_core::Platform;
 use hush_engine::Engine;
 use serde_json::{Value, json};
 
-use crate::{cli, daemon};
+use crate::{cli, daemon, limits};
 
 /// How long the host waits with no connection open before exiting.
 const IDLE: Duration = Duration::from_secs(600);
@@ -140,6 +140,11 @@ fn handle<P: Shared>(host: &Host<P>, stream: UnixStream) {
             return;
         }
         let mut engine = Engine::new(Arc::clone(&host.platform));
+        match limits::load() {
+            Ok(limits) => engine.set_limits(limits),
+            // The agent's first call gets the reason instead of an answer.
+            Err(mistake) => engine.set_limits(hush_core::Limits::nothing(mistake)),
+        }
         let _ = hush_mcp::serve(&mut engine, reader, writer);
         return;
     }
@@ -158,10 +163,11 @@ fn handle<P: Shared>(host: &Host<P>, stream: UnixStream) {
         Some("test") => Arc::new(Mutex::new(Engine::new(Arc::clone(&host.platform)))),
         _ => shell_engine(host, &args),
     };
-    let result = cli::command(
-        &mut engine.lock().unwrap_or_else(PoisonError::into_inner),
-        &args,
-    );
+    let result = limits::load().and_then(|limits| {
+        let mut engine = engine.lock().unwrap_or_else(PoisonError::into_inner);
+        engine.set_limits(limits);
+        cli::command(&mut engine, &args)
+    });
     let reply = match result {
         Ok(text) => json!({ "ok": true, "text": text }),
         Err(text) => json!({ "ok": false, "text": text }),

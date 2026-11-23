@@ -3,7 +3,7 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use hush_core::{AppInfo, Error, Platform, Result, WindowInfo};
+use hush_core::{Access, AppInfo, Error, Platform, Result, WindowInfo};
 
 use crate::Engine;
 
@@ -55,8 +55,10 @@ impl<P: Platform> Engine<P> {
     /// running, and waits for it to open a window (or for the limit).
     /// Returns the app it started, if any.
     pub(crate) fn start_if_needed(&self, query: &str) -> Result<Option<AppInfo>> {
-        if self.find_app(query).is_ok() {
-            return Ok(None);
+        match self.find_app(query) {
+            Ok(_) => return Ok(None),
+            Err(refused @ Error::Permission(_)) => return Err(refused),
+            Err(_) => {}
         }
         let wanted = query.trim().to_lowercase();
         let Some(app) = self.platform.apps(Some(query))?.into_iter().find(|app| {
@@ -65,6 +67,7 @@ impl<P: Platform> Engine<P> {
         }) else {
             return Ok(None);
         };
+        self.limits.check(&app, Access::Read)?;
         self.platform.launch(&app)?;
         let deadline = Instant::now() + START_LIMIT;
         while Instant::now() < deadline {
@@ -98,6 +101,9 @@ impl<P: Platform> Engine<P> {
         } else {
             candidates.into_iter().max_by_key(score)
         };
+        if let Some(app) = &best {
+            self.limits.check(app, Access::Read)?;
+        }
         match best {
             Some(app) if app.pid.is_some() => Ok(app),
             Some(app) => Err(Error::NotFound(format!(

@@ -8,8 +8,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hush_core::{
-    AppInfo, Condition, Diff, Element, Error, Key, KeyCombo, NamedKey, Op, Platform, Reason, Ref,
-    Result, Role, Step, WindowInfo, timeline,
+    Access, AppInfo, Condition, Diff, Element, Error, Key, KeyCombo, NamedKey, Op, Platform,
+    Reason, Ref, Result, Role, Step, WindowInfo, timeline,
 };
 
 use hush_core::cursor::Gesture;
@@ -63,6 +63,7 @@ impl<P: Platform> Engine<P> {
 
         if window.is_none() && parsed.iter().all(|s| matches!(s, Step::Menu { .. })) {
             let found = self.find_app(app)?;
+            self.limits.check(&found, Access::Act)?;
             if self.platform.windows(&found)?.is_empty() {
                 return self
                     .menus_without_window(&found, &parsed, steps)
@@ -74,6 +75,7 @@ impl<P: Platform> Engine<P> {
         }
         let window_title = window;
         let (app, window) = self.target(app, window)?;
+        self.limits.check(&app, Access::Act)?;
         let key = key(&app, &window);
         if let Entry::Vacant(entry) = self.mirrors.entry(key) {
             let snapshot = self.platform.read(&app, &window)?;

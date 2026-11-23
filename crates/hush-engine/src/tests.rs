@@ -642,3 +642,68 @@ fn an_agents_run_saves_as_a_test_that_replays_in_a_new_session() {
         ["Type { text: \"Q4\", into: Some(Name) }", "Press(Save)"]
     );
 }
+
+#[test]
+fn a_read_only_app_can_be_observed_but_not_acted_on() {
+    let mut engine = Engine::new(Fake::new());
+    engine.set_limits(hush_core::Limits::parse("read Editor").unwrap());
+    assert!(engine.observe("Editor", ObserveOptions::default()).is_ok());
+    let refused = engine
+        .act("Editor", None, &steps(&["click b1"]))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("Editor is read-only for agents"),
+        "{refused}"
+    );
+    assert!(
+        engine
+            .script("Editor", "beep", ScriptLanguage::AppleScript)
+            .is_err()
+    );
+    assert!(engine.platform().ops().is_empty());
+    assert!(
+        engine
+            .apps(None)
+            .unwrap()
+            .contains("Editor · running · read-only")
+    );
+}
+
+#[test]
+fn an_app_off_limits_is_neither_read_nor_started() {
+    let fake = Fake::new();
+    fake.world.borrow_mut().stopped = true;
+    let mut engine = Engine::new(fake);
+    engine.set_limits(hush_core::Limits::parse("only Calculator").unwrap());
+    let refused = engine
+        .observe("Editor", ObserveOptions::default())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        refused.contains("Editor is off limits to agents"),
+        "{refused}"
+    );
+    assert!(engine.platform().ops().is_empty(), "it wasn't launched");
+}
+
+#[test]
+fn limits_turn_scripts_off_since_a_script_can_reach_any_app() {
+    let mut engine = Engine::new(Fake::new());
+    engine.set_limits(hush_core::Limits::parse("never Messages").unwrap());
+    let refused = engine
+        .script(
+            "Editor",
+            "tell application \"Messages\" to quit",
+            ScriptLanguage::AppleScript,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("scripts are off"), "{refused}");
+    engine.set_limits(hush_core::Limits::default());
+    assert!(
+        engine
+            .script("Editor", "beep", ScriptLanguage::AppleScript)
+            .is_ok()
+    );
+}

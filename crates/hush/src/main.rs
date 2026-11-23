@@ -10,6 +10,7 @@
 mod cli;
 mod daemon;
 mod host;
+mod limits;
 mod platform;
 mod setup;
 mod signals;
@@ -128,6 +129,7 @@ fn main() -> ExitCode {
 }
 
 fn run<P: hush_core::Platform>(mut engine: Engine<P>, args: &[String]) -> Result<String, String> {
+    engine.set_limits(limits::load()?);
     match args[0].as_str() {
         "mcp" => {
             let stdin = io::stdin();

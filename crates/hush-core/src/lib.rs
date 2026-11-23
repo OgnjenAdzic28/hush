@@ -5,6 +5,7 @@
 pub mod cursor;
 pub mod diff;
 pub mod key;
+pub mod limits;
 pub mod locator;
 pub mod menus;
 pub mod model;
@@ -21,6 +22,7 @@ mod test_support;
 
 pub use diff::Diff;
 pub use key::{Key, KeyCombo, Modifiers, NamedKey};
+pub use limits::{Access, Limits};
 pub use locator::{Locator, Miss};
 pub use menus::MenuEntry;
 pub use model::{Actions, AppInfo, Image, Node, Rect, Role, Snapshot, States, WindowInfo};
