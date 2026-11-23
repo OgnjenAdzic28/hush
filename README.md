@@ -175,7 +175,8 @@ you already had open take clicks, `set`, `type`, `select` and menus through acce
 nothing else, so an agent can never type into your window by mistake. `cmd+s` means Ctrl+S there.
 
 Every change runs the real binary against GNOME Calculator, Mousepad, GNOME Text Editor,
-FeatherPad (Qt), LibreOffice Writer and Firefox: start, read, type, read back, picture. It also
+FeatherPad (Qt), LibreOffice Writer, Firefox and Google Chrome: start, read, type, read back,
+picture. It also
 runs against a real GNOME Shell Wayland session, with an app open on the desktop that Hush reads
 and clicks without disturbing. Measured on GitHub's Linux runners: observe reads GNOME
 Calculator's 98 elements in 24 ms, a click settles in 20 to 35 ms, and timeline events land
