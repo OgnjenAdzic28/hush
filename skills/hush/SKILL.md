@@ -61,6 +61,12 @@ user to run `hush setup` or let `hush` run outside your sandbox. Don't try to wo
 Refs stay valid across calls while the element exists. All `hush` shell commands share one
 session, so refs from one command work in the next.
 
+Anywhere a step takes a ref, it also takes the element as its outline line shows it:
+`click button "Save"`, `type field "Name" "Ada"`, `wait sheet "Saved"`. Hush finds it in the
+window when the step runs, so a batch can act on a window you haven't observed, or on what an
+earlier step opened. The name matches exactly, then ignoring case, then as part of the name.
+When several match, add which one: `button[2] "OK"`, or `field[1]` for an unnamed field.
+
 ## Steps
 
 | Step | Use |

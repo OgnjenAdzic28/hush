@@ -77,6 +77,10 @@ Steps: `click REF|X,Y`, `double REF`, `right REF`, `set REF VALUE`, `type [REF] 
 `scroll REF up|down|left|right [N]`, `show REF`, `drag REF|X,Y to REF|X,Y`,
 `wait gone REF | REF | text "T" | 500ms [within 10s]`, `lane`, `unlane`.
 
+Any `REF` can also be the element as its outline line shows it: `click button "Save"`,
+`type field[2] "Ada"`. Hush finds it when the step runs, so an agent can act on a window it never
+read, and a batch can reach into a sheet that an earlier step opened.
+
 Timeline events, one per line: `MS down KEY`, `MS up KEY`, `MS tap KEY [HOLD]`, `MS down X,Y`,
 `MS move X,Y`, `MS up X,Y`, `MS tap X,Y [HOLD]`. Hush plays them on a real-time thread, under a
 millisecond off schedule at the median.

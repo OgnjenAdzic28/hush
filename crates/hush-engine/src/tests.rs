@@ -514,3 +514,55 @@ fn act_doesnt_start_apps() {
     );
     assert!(engine.platform().ops().is_empty());
 }
+
+#[test]
+fn locators_act_on_a_window_nobody_observed_and_waits_find_what_appears() {
+    let mut engine = Engine::new(Fake::new());
+    let report = engine
+        .act(
+            "Editor",
+            None,
+            &steps(&[
+                r#"type field "Name" "Q4""#,
+                r#"click button "save""#,
+                r#"wait sheet "Saved""#,
+                r#"wait gone button "Save""#,
+            ]),
+        )
+        .unwrap();
+    assert!(report.starts_with("# 4/4 steps · "), "{report}");
+    assert_eq!(
+        engine.platform().ops(),
+        ["Type { text: \"Q4\", into: Some(Name) }", "Press(Save)"]
+    );
+}
+
+#[test]
+fn a_locator_that_finds_nothing_says_what_is_there() {
+    let mut engine = Engine::new(Fake::new());
+    let report = engine
+        .act("Editor", None, &steps(&[r#"click button "Export""#]))
+        .unwrap();
+    assert!(
+        report.contains(r#"stopped at step 1 (`click button "Export"`): not found: no button "Export" in the window; it has b1 button "Save""#),
+        "{report}"
+    );
+    assert!(engine.platform().ops().is_empty());
+}
+
+#[test]
+fn an_index_past_the_last_match_is_not_there() {
+    let mut engine = Engine::new(Fake::new());
+    let waited = engine
+        .act("Editor", None, &steps(&["wait button[2] within 100ms"]))
+        .unwrap();
+    assert!(waited.contains("still waiting"), "{waited}");
+    let gone = engine
+        .act(
+            "Editor",
+            None,
+            &steps(&["wait gone button[2] within 100ms"]),
+        )
+        .unwrap();
+    assert!(gone.starts_with("# 1/1 steps"), "{gone}");
+}

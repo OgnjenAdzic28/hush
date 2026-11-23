@@ -102,6 +102,57 @@ pub enum Role {
 }
 
 impl Role {
+    pub const ALL: [Role; 40] = {
+        use Role::*;
+        [
+            Window,
+            Sheet,
+            Dialog,
+            Popover,
+            Button,
+            MenuButton,
+            Disclosure,
+            Link,
+            CheckBox,
+            Radio,
+            Switch,
+            TextField,
+            TextArea,
+            SearchField,
+            SecureField,
+            ComboBox,
+            PopUp,
+            Slider,
+            Stepper,
+            MenuBar,
+            Menu,
+            MenuItem,
+            TabGroup,
+            Tab,
+            Toolbar,
+            List,
+            Table,
+            Outline,
+            Row,
+            Cell,
+            Column,
+            ScrollArea,
+            WebArea,
+            Group,
+            Heading,
+            Text,
+            Image,
+            Progress,
+            Seen,
+            Other,
+        ]
+    };
+
+    /// The role the outline prints as `word`.
+    pub fn from_word(word: &str) -> Option<Role> {
+        Role::ALL.into_iter().find(|role| role.word() == word)
+    }
+
     /// The word the outline prints.
     pub fn word(self) -> &'static str {
         use Role::*;
