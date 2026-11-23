@@ -686,3 +686,24 @@ fn an_app_off_limits_is_neither_read_nor_started() {
     );
     assert!(engine.platform().ops().is_empty(), "it wasn't launched");
 }
+
+#[test]
+fn limits_turn_scripts_off_since_a_script_can_reach_any_app() {
+    let mut engine = Engine::new(Fake::new());
+    engine.set_limits(hush_core::Limits::parse("never Messages").unwrap());
+    let refused = engine
+        .script(
+            "Editor",
+            "tell application \"Messages\" to quit",
+            ScriptLanguage::AppleScript,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("scripts are off"), "{refused}");
+    engine.set_limits(hush_core::Limits::default());
+    assert!(
+        engine
+            .script("Editor", "beep", ScriptLanguage::AppleScript)
+            .is_ok()
+    );
+}

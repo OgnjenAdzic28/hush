@@ -119,6 +119,21 @@ impl Limits {
         }
     }
 
+    /// Fails when any limits are set. A script can address any app, or run
+    /// a shell command, whatever app the call names, so its target can't be
+    /// checked; with limits in place, scripts are off.
+    pub fn check_script(&self) -> Result<(), Error> {
+        if let Some(reason) = &self.broken {
+            return Err(Error::Permission(reason.clone()));
+        }
+        if self.is_empty() {
+            return Ok(());
+        }
+        Err(Error::Permission(
+            "scripts are off while the user has Hush limits, since a script can reach any app; use observe and act instead".into(),
+        ))
+    }
+
     /// A word for the app's line in `apps`, when it is limited.
     pub fn mark(&self, app: &AppInfo) -> Option<&'static str> {
         match self.allowed(app) {
@@ -205,6 +220,14 @@ mod tests {
             Limits::parse("never")
                 .unwrap_err()
                 .contains("names no apps")
+        );
+        assert!(Limits::default().check_script().is_ok());
+        assert!(
+            limits
+                .check_script()
+                .unwrap_err()
+                .to_string()
+                .contains("scripts are off")
         );
     }
 }

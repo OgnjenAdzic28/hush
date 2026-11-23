@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use hush_core::{
-    Access, AppInfo, Diff, Error, Image, Limits, OutlineOptions, Pace, Platform, Ref, Result,
+    AppInfo, Diff, Error, Image, Limits, OutlineOptions, Pace, Platform, Ref, Result,
     ScriptLanguage, WindowInfo,
 };
 
@@ -191,7 +191,7 @@ impl<P: Platform> Engine<P> {
             path: None,
             frontmost: false,
         });
-        self.limits.check(&info, Access::Act)?;
+        self.limits.check_script()?;
         self.platform.script(&info, source, language)
     }
 

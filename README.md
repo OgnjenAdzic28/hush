@@ -169,7 +169,8 @@ read Terminal, Mail                          # agents can read these, not act on
 only Notes, TextEdit, Terminal, Mail         # with an only line, every other app is off limits
 ```
 
-Names are app names or bundle ids. `hush apps` marks limited apps, and a refused call tells the
+Names are app names or bundle ids. While any limits are set, `script` is off, since a script can
+reach any app. `hush apps` marks limited apps, and a refused call tells the
 agent the user chose it, so it reports back instead of trying something else. Every command and
 new MCP session reads the file, so an edit applies at once. A file with a mistake stops Hush until
 it's fixed, so nothing runs without the limits by accident.

@@ -146,7 +146,8 @@ for what should be true, and run it.
 - Never activate or raise an app to make something work. If Hush can't do it in the background, it
   says so; report that.
 - If Hush says an app is off limits or read-only, the user set that in Hush's limits. Tell them
-  what you needed; don't reach the app another way (`osascript`, `open`, keystrokes).
+  what you needed; don't reach the app another way (`osascript`, `open`, keystrokes). While the
+  user has limits, `script` is off; use `observe` and `act`.
 - If an app "isn't responding", it is stuck, not slow: tell the user rather than retrying in a
   loop.
 
