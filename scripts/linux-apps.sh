@@ -150,7 +150,11 @@ for app in pyatspi.Registry.getDesktop(0):
         print(doc.getRoleName(), repr(doc.name)[:40], keep, "index", doc.getIndexInParent())
         doc = doc.parent
 PY
-    "$hush" observe "Google Chrome" --full | tail -30
+    if [ -x target/release/examples/tree ]; then
+      target/release/examples/tree "Google Chrome" >"$out/chrome-tree.txt" 2>&1
+      wc -l "$out/chrome-tree.txt"
+      grep -n -B4 -A2 -E "WebArea|Heading" "$out/chrome-tree.txt" | cut -c1-200 | head -40
+    fi
     return 1
   fi
   pictured "Google Chrome" chrome

@@ -118,7 +118,7 @@ jobs:
           sudo install -d /etc/opt/chrome/policies/managed
           echo '{"DefaultBrowserSettingEnabled":false,"PromotionsEnabled":false,"MetricsReportingEnabled":false,"BrowserSignin":0}' \
             | sudo tee /etc/opt/chrome/policies/managed/hush.json
-      - run: cargo build --release -p hush
+      - run: cargo build --release -p hush && cargo build --release -p hush-linux --example tree
       - name: Drive them through hush
         run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer qt firefox chrome
       - name: Keep the pictures
