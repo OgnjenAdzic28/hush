@@ -133,7 +133,7 @@ check_chrome() {
     return 1
   fi
   if ! shows "Google Chrome" 'heading "hello from hush ✓"' 20; then
-    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)" || true
+    python3 scripts/atspi-tree.py "google chrome" 16 | grep -iE -B2 "document|heading|internal frame|scroll" | cut -c1-200 | head -60
     return 1
   fi
   pictured "Google Chrome" chrome
