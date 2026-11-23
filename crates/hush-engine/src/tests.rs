@@ -549,3 +549,20 @@ fn a_locator_that_finds_nothing_says_what_is_there() {
     );
     assert!(engine.platform().ops().is_empty());
 }
+
+#[test]
+fn an_index_past_the_last_match_is_not_there() {
+    let mut engine = Engine::new(Fake::new());
+    let waited = engine
+        .act("Editor", None, &steps(&["wait button[2] within 100ms"]))
+        .unwrap();
+    assert!(waited.contains("still waiting"), "{waited}");
+    let gone = engine
+        .act(
+            "Editor",
+            None,
+            &steps(&["wait gone button[2] within 100ms"]),
+        )
+        .unwrap();
+    assert!(gone.starts_with("# 1/1 steps"), "{gone}");
+}

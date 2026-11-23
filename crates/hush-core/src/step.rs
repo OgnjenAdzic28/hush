@@ -246,7 +246,12 @@ impl Parser<'_, '_> {
 
     fn drag(&mut self, rest: &str) -> Result<Step, String> {
         let shape = || format!("drag needs FROM to TO, got '{rest}'");
-        let (from, after) = self.target(rest).map_err(|_| shape())?;
+        let (from, after) = self
+            .target(rest)
+            .map_err(|error| match Locator::parse(rest) {
+                Some(_) => error,
+                None => shape(),
+            })?;
         let after = after.strip_prefix("to ").unwrap_or(after).trim_start();
         if after.is_empty() {
             return Err(shape());
@@ -286,10 +291,15 @@ impl Parser<'_, '_> {
     /// A ref, a point or a locator at the start of `rest`, and what follows.
     fn target<'t>(&mut self, rest: &'t str) -> Result<(Target, &'t str), String> {
         let (word, after) = split_word(rest);
-        if let Some((x, y)) = word.split_once(',')
-            && let (Ok(x), Ok(y)) = (x.trim().parse(), y.trim().parse())
-        {
-            return Ok((Target::Point(x, y), after));
+        if let Some(point) = point(word) {
+            return Ok((point, after));
+        }
+        // A point may have a space after its comma: `120, 48`.
+        if word.ends_with(',') {
+            let (y, after) = split_word(after);
+            if let Some(point) = point(&format!("{word}{y}")) {
+                return Ok((point, after));
+            }
         }
         let (r, after) = self.element(rest).map_err(|error| {
             if Locator::parse(rest).is_some() {
@@ -340,6 +350,14 @@ impl Parser<'_, '_> {
         expect_end(after)?;
         Ok(r)
     }
+}
+
+fn point(word: &str) -> Option<Target> {
+    let (x, y) = word.split_once(',')?;
+    Some(Target::Point(
+        x.trim().parse().ok()?,
+        y.trim().parse().ok()?,
+    ))
 }
 
 fn expect_end(rest: &str) -> Result<(), String> {
@@ -609,6 +627,26 @@ mod tests {
             Step::parse(r#"click button "Save""#)
                 .unwrap_err()
                 .contains("needs a window")
+        );
+    }
+
+    #[test]
+    fn points_may_have_a_space_after_the_comma() {
+        assert_eq!(
+            Step::parse("click 1, 1").unwrap(),
+            Step::Click {
+                target: Target::Point(1.0, 1.0),
+                button: Button::Left,
+                count: 1
+            }
+        );
+        assert_eq!(
+            Step::parse("scroll 10, 20 up 2").unwrap(),
+            Step::Scroll {
+                target: Target::Point(10.0, 20.0),
+                direction: Direction::Up,
+                amount: 2
+            }
         );
     }
 

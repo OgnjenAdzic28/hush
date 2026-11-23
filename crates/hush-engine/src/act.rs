@@ -504,14 +504,15 @@ fn met<H: Clone + Eq + std::hash::Hash>(until: &Condition, mirror: &Mirror<H>) -
     }
 }
 
-/// Whether the element is in the window. A locator that matches several
-/// elements counts: something it names is there.
+/// Whether the element is in the window. A locator without an index that
+/// matches several elements counts: something it names is there. One whose
+/// `[N]` is past the last match doesn't: the Nth isn't there.
 fn found<H: Clone + Eq + std::hash::Hash>(element: &Element, mirror: &Mirror<H>) -> bool {
     match element {
         Element::Ref(r) => mirror.node(*r).is_some(),
         Element::Find(locator) => !matches!(
             locator.find(&mirror.current.lines),
-            Err(hush_core::Miss::None(_))
+            Err(hush_core::Miss::None(_) | hush_core::Miss::Past(_))
         ),
     }
 }
