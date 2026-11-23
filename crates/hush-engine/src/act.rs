@@ -8,8 +8,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use hush_core::{
-    AppInfo, Condition, Diff, Error, Key, KeyCombo, NamedKey, Op, Platform, Reason, Ref, Result,
-    Role, Step, WindowInfo, timeline,
+    AppInfo, Condition, Diff, Element, Error, Key, KeyCombo, NamedKey, Op, Platform, Reason, Ref,
+    Result, Role, Step, WindowInfo, timeline,
 };
 
 use hush_core::cursor::Gesture;
@@ -35,14 +35,18 @@ impl<P: Platform> Engine<P> {
     /// Runs `steps` (one command each, see `hush_core::step::SYNTAX`) on the
     /// window and returns a report: steps done, time, and the change.
     pub fn act(&mut self, app: &str, window: Option<&str>, steps: &[String]) -> Result<String> {
-        let parsed = steps
+        // Every step's syntax is checked before any runs. A step that names
+        // elements by locator is parsed again just before it runs, against
+        // the window as the earlier steps left it.
+        let checked = steps
             .iter()
             .enumerate()
             .map(|(i, text)| {
-                Step::parse(text)
+                Step::check(text)
                     .map_err(|e| Error::Failed(format!("step {} (`{text}`): {e}", i + 1)))
             })
-            .collect::<Result<Vec<Step>>>()?;
+            .collect::<Result<Vec<(Step, bool)>>>()?;
+        let parsed: Vec<Step> = checked.iter().map(|(step, _)| step.clone()).collect();
         if parsed.is_empty() {
             return Err(Error::Failed("act needs at least one step".into()));
         }
@@ -66,8 +70,12 @@ impl<P: Platform> Engine<P> {
         let mut stopped = None;
         let mut dirty = false;
         let mut last_settle = None;
-        for (i, step) in parsed.iter().enumerate() {
-            match self.run(&app, &window, step, &mut dirty) {
+        for (i, (step, located)) in checked.iter().enumerate() {
+            let step = match located {
+                true => self.locate(&app, &window, &steps[i], &mut dirty),
+                false => Ok(step.clone()),
+            };
+            match step.and_then(|step| self.run(&app, &window, &step, &mut dirty)) {
                 Ok(settled) => {
                     done += 1;
                     last_settle = settled.or(last_settle);
@@ -228,7 +236,13 @@ impl<P: Platform> Engine<P> {
                         // value that hasn't changed yet. A menu that stays
                         // open is closed so it doesn't float over the user.
                         if self
-                            .wait_for(app, window, &Condition::Gone(item), MENU_CLOSE, dirty)
+                            .wait_for(
+                                app,
+                                window,
+                                &Condition::Gone(Element::Ref(item)),
+                                MENU_CLOSE,
+                                dirty,
+                            )
                             .is_err()
                         {
                             let _ = self.platform.perform(
@@ -358,6 +372,35 @@ impl<P: Platform> Engine<P> {
         }
     }
 
+    /// Parses `text` with its locators turned into refs of the window as it
+    /// is now. A locator that finds nothing is tried once more on a fresh
+    /// read, in case the app changed without saying so.
+    fn locate(
+        &mut self,
+        app: &AppInfo,
+        window: &WindowInfo,
+        text: &str,
+        dirty: &mut bool,
+    ) -> Result<Step> {
+        if *dirty {
+            self.refresh(app, window, dirty)?;
+        }
+        let parse = |engine: &Self| {
+            let lines = &engine.mirror(app, window).current.lines;
+            Step::parse_with(text, &mut |locator| {
+                locator.find(lines).map_err(|miss| miss.explain(locator))
+            })
+            .map_err(Error::NotFound)
+        };
+        match parse(self) {
+            Err(_) => {
+                self.refresh(app, window, dirty)?;
+                parse(self)
+            }
+            found => found,
+        }
+    }
+
     fn refresh(&mut self, app: &AppInfo, window: &WindowInfo, dirty: &mut bool) -> Result<()> {
         let snapshot = self.platform.read(app, window)?;
         let options = self.options.clone();
@@ -445,8 +488,8 @@ fn needs_refresh<H: Clone + Eq + std::hash::Hash>(step: &Step, mirror: &Mirror<H
 
 fn met<H: Clone + Eq + std::hash::Hash>(until: &Condition, mirror: &Mirror<H>) -> bool {
     match until {
-        Condition::Exists(r) => mirror.node(*r).is_some(),
-        Condition::Gone(r) => mirror.node(*r).is_none(),
+        Condition::Exists(element) => found(element, mirror),
+        Condition::Gone(element) => !found(element, mirror),
         Condition::Text(text) => {
             let wanted = text.to_lowercase();
             mirror.snapshot().nodes.iter().any(|node| {
@@ -458,6 +501,18 @@ fn met<H: Clone + Eq + std::hash::Hash>(until: &Condition, mirror: &Mirror<H>) -
             })
         }
         Condition::Settled | Condition::Elapsed(_) => true,
+    }
+}
+
+/// Whether the element is in the window. A locator that matches several
+/// elements counts: something it names is there.
+fn found<H: Clone + Eq + std::hash::Hash>(element: &Element, mirror: &Mirror<H>) -> bool {
+    match element {
+        Element::Ref(r) => mirror.node(*r).is_some(),
+        Element::Find(locator) => !matches!(
+            locator.find(&mirror.current.lines),
+            Err(hush_core::Miss::None(_))
+        ),
     }
 }
 

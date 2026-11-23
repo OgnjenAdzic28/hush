@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use crate::key::KeyCombo;
+use crate::locator::Locator;
 use crate::refs::Ref;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -28,12 +29,20 @@ pub enum Direction {
     Right,
 }
 
+/// An element a wait looks for: by ref, or by locator when it may not be
+/// there yet.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Element {
+    Ref(Ref),
+    Find(Locator),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Condition {
     /// The app finished reacting (the default after every step).
     Settled,
-    Exists(Ref),
-    Gone(Ref),
+    Exists(Element),
+    Gone(Element),
     /// Some element's name or value contains the text.
     Text(String),
     Elapsed(Duration),
@@ -104,38 +113,54 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
 scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|text \"T\"|500ms [within 10s] · \
-lane (move the window off screen, where it still renders and takes clicks) · unlane (put it back)";
+lane (move the window off screen, where it still renders and takes clicks) · unlane (put it back) · \
+REF can also be an outline line's head: button \"Save\", field[2]";
+
+/// Finds the ref a locator names, in the window the step will run on.
+pub type Resolve<'a> = dyn FnMut(&Locator) -> Result<Ref, String> + 'a;
 
 impl Step {
+    /// Parses a step that names elements by ref only; a locator is an error.
     pub fn parse(line: &str) -> Result<Step, String> {
+        Step::parse_with(line, &mut |locator| {
+            Err(format!("{locator} needs a window to look in"))
+        })
+    }
+
+    /// Parses a step, turning each locator into a ref with `resolve`. Waits
+    /// keep their locators: what they wait for may not be there yet.
+    pub fn parse_with(line: &str, resolve: &mut Resolve<'_>) -> Result<Step, String> {
+        let mut parser = Parser { resolve };
         let line = line.trim();
         let (verb, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
         let rest = rest.trim();
         let step = match verb.to_lowercase().as_str() {
-            "click" => click(rest, Button::Left, 1)?,
-            "double" => click(rest, Button::Left, 2)?,
-            "right" => click(rest, Button::Right, 1)?,
-            "drag" => drag(rest)?,
+            "click" => parser.click(rest, Button::Left, 1)?,
+            "double" => parser.click(rest, Button::Left, 2)?,
+            "right" => parser.click(rest, Button::Right, 1)?,
+            "drag" => parser.drag(rest)?,
             "set" => {
-                let (r, value) = ref_then_rest(rest)?;
+                let (r, value) = parser.element_then_value(rest)?;
                 Step::Set {
                     r,
                     value: text(value),
                 }
             }
-            "type" => {
-                let (first, after) = split_word(rest);
-                match Ref::parse(first) {
-                    Some(r) if !after.is_empty() => Step::Type {
-                        into: Some(r),
-                        text: text(after),
-                    },
-                    _ => Step::Type {
-                        into: None,
-                        text: text(rest),
-                    },
+            "type" => match parser.element_then_value(rest) {
+                Ok((r, after)) if !after.is_empty() => Step::Type {
+                    into: Some(r),
+                    text: text(after),
+                },
+                // A locator that names nothing here, with text after it, is
+                // a mistake worth reporting rather than text to type.
+                Err(error) if Locator::parse(rest).is_some_and(|(_, after)| !after.is_empty()) => {
+                    return Err(error);
                 }
-            }
+                _ => Step::Type {
+                    into: None,
+                    text: text(rest),
+                },
+            },
             "key" | "press" => {
                 let (combo, after) = split_word(rest);
                 let repeat = match after {
@@ -159,16 +184,22 @@ impl Step {
                     .collect(),
             },
             "pick" => {
-                let (r, option) = ref_then_rest(rest)?;
+                let (r, option) = parser.element_then_value(rest)?;
                 Step::Pick {
                     r,
                     option: text(option),
                 }
             }
-            "select" => Step::Select { r: only_ref(rest)? },
-            "focus" => Step::Focus { r: only_ref(rest)? },
-            "show" => Step::Show { r: only_ref(rest)? },
-            "scroll" => scroll(rest)?,
+            "select" => Step::Select {
+                r: parser.only_element(rest)?,
+            },
+            "focus" => Step::Focus {
+                r: parser.only_element(rest)?,
+            },
+            "show" => Step::Show {
+                r: parser.only_element(rest)?,
+            },
+            "scroll" => parser.scroll(rest)?,
             "wait" => wait(rest)?,
             "lane" if rest.is_empty() => Step::Lane,
             "unlane" if rest.is_empty() => Step::Unlane,
@@ -183,52 +214,139 @@ impl Step {
             _ => Ok(step),
         }
     }
-}
 
-fn click(rest: &str, button: Button, count: u8) -> Result<Step, String> {
-    Ok(Step::Click {
-        target: target(rest)?,
-        button,
-        count,
-    })
-}
-
-fn drag(rest: &str) -> Result<Step, String> {
-    let words: Vec<&str> = rest.split_whitespace().filter(|w| *w != "to").collect();
-    match words[..] {
-        [from, to] => Ok(Step::Drag {
-            from: target(from)?,
-            to: target(to)?,
-        }),
-        _ => Err(format!("drag needs FROM to TO, got '{rest}'")),
+    /// Checks a step's syntax without a window: locators stand in for any
+    /// ref. Says whether it has locators, which [`Step::parse_with`] must
+    /// resolve against the window just before the step runs.
+    pub fn check(line: &str) -> Result<(Step, bool), String> {
+        let stand_in = Ref::parse("e1").expect("a valid ref");
+        let mut used = false;
+        let step = Step::parse_with(line, &mut |_| {
+            used = true;
+            Ok(stand_in)
+        })?;
+        Ok((step, used))
     }
 }
 
-fn scroll(rest: &str) -> Result<Step, String> {
-    let mut words = rest.split_whitespace();
-    let target = target(words.next().unwrap_or(""))?;
-    let direction = match words.next() {
-        Some("up") => Direction::Up,
-        Some("down") | None => Direction::Down,
-        Some("left") => Direction::Left,
-        Some("right") => Direction::Right,
-        Some(other) => {
-            return Err(format!(
-                "scroll direction must be up, down, left or right, got '{other}'"
-            ));
+struct Parser<'r, 'a> {
+    resolve: &'r mut Resolve<'a>,
+}
+
+impl Parser<'_, '_> {
+    fn click(&mut self, rest: &str, button: Button, count: u8) -> Result<Step, String> {
+        let (target, after) = self.target(rest)?;
+        expect_end(after)?;
+        Ok(Step::Click {
+            target,
+            button,
+            count,
+        })
+    }
+
+    fn drag(&mut self, rest: &str) -> Result<Step, String> {
+        let shape = || format!("drag needs FROM to TO, got '{rest}'");
+        let (from, after) = self.target(rest).map_err(|_| shape())?;
+        let after = after.strip_prefix("to ").unwrap_or(after).trim_start();
+        if after.is_empty() {
+            return Err(shape());
         }
-    };
-    let amount = match words.next() {
-        Some(n) => n
-            .parse()
-            .map_err(|_| format!("scroll amount must be a number, got '{n}'"))?,
-        None => 3,
-    };
-    Ok(Step::Scroll {
-        target,
-        direction,
-        amount,
-    })
+        let (to, end) = self.target(after)?;
+        expect_end(end)?;
+        Ok(Step::Drag { from, to })
+    }
+
+    fn scroll(&mut self, rest: &str) -> Result<Step, String> {
+        let (target, after) = self.target(rest)?;
+        let mut words = after.split_whitespace();
+        let direction = match words.next() {
+            Some("up") => Direction::Up,
+            Some("down") | None => Direction::Down,
+            Some("left") => Direction::Left,
+            Some("right") => Direction::Right,
+            Some(other) => {
+                return Err(format!(
+                    "scroll direction must be up, down, left or right, got '{other}'"
+                ));
+            }
+        };
+        let amount = match words.next() {
+            Some(n) => n
+                .parse()
+                .map_err(|_| format!("scroll amount must be a number, got '{n}'"))?,
+            None => 3,
+        };
+        Ok(Step::Scroll {
+            target,
+            direction,
+            amount,
+        })
+    }
+
+    /// A ref, a point or a locator at the start of `rest`, and what follows.
+    fn target<'t>(&mut self, rest: &'t str) -> Result<(Target, &'t str), String> {
+        let (word, after) = split_word(rest);
+        if let Some((x, y)) = word.split_once(',')
+            && let (Ok(x), Ok(y)) = (x.trim().parse(), y.trim().parse())
+        {
+            return Ok((Target::Point(x, y), after));
+        }
+        let (r, after) = self.element(rest).map_err(|error| {
+            if Locator::parse(rest).is_some() {
+                error
+            } else {
+                format!("expected a ref like b3, a point like 120,48 or a locator like button \"Save\", got '{word}'")
+            }
+        })?;
+        Ok((Target::Ref(r), after))
+    }
+
+    /// A ref or a locator at the start of `rest`, and what follows.
+    fn element<'t>(&mut self, rest: &'t str) -> Result<(Ref, &'t str), String> {
+        self.element_then(rest, false)
+    }
+
+    /// Like `element`, for steps that need a value after it (`type`, `set`,
+    /// `pick`): in `field[2] "Ada"` the quoted text is the value, not a name.
+    fn element_then_value<'t>(&mut self, rest: &'t str) -> Result<(Ref, &'t str), String> {
+        self.element_then(rest, true)
+    }
+
+    fn element_then<'t>(
+        &mut self,
+        rest: &'t str,
+        value_follows: bool,
+    ) -> Result<(Ref, &'t str), String> {
+        if let Some((mut locator, mut after)) = Locator::parse(rest) {
+            if value_follows
+                && after.is_empty()
+                && locator.nth.is_some()
+                && locator.name.take().is_some()
+                && let Some(close) = rest.find(']')
+            {
+                after = rest[close + 1..].trim();
+            }
+            return Ok(((self.resolve)(&locator)?, after));
+        }
+        let (word, after) = split_word(rest);
+        let r = Ref::parse(word).ok_or_else(|| {
+            format!("expected a ref like b3 or a locator like button \"Save\", got '{word}'")
+        })?;
+        Ok((r, after))
+    }
+
+    fn only_element(&mut self, rest: &str) -> Result<Ref, String> {
+        let (r, after) = self.element(rest)?;
+        expect_end(after)?;
+        Ok(r)
+    }
+}
+
+fn expect_end(rest: &str) -> Result<(), String> {
+    match rest.trim() {
+        "" => Ok(()),
+        extra => Err(format!("unexpected '{extra}' at the end")),
+    }
 }
 
 fn wait(rest: &str) -> Result<Step, String> {
@@ -239,42 +357,28 @@ fn wait(rest: &str) -> Result<Step, String> {
     let (word, after) = split_word(condition);
     let until = match word {
         "" | "idle" => Condition::Settled,
-        "gone" => Condition::Gone(only_ref(after)?),
+        "gone" => Condition::Gone(only_element(after)?),
         "text" => Condition::Text(text(after)),
-        _ => match (Ref::parse(word), duration(word)) {
-            (Some(r), _) if after.is_empty() => Condition::Exists(r),
-            (_, Ok(elapsed)) if after.is_empty() => Condition::Elapsed(elapsed),
-            _ => {
-                return Err(format!(
-                    "wait needs gone REF, REF, text \"T\" or a time, got '{condition}'"
-                ));
-            }
+        _ => match duration(word) {
+            Ok(elapsed) if after.is_empty() => Condition::Elapsed(elapsed),
+            _ => Condition::Exists(only_element(condition).map_err(|_| {
+                format!("wait needs gone REF, REF, text \"T\" or a time, got '{condition}'")
+            })?),
         },
     };
     Ok(Step::Wait { until, within })
 }
 
-fn target(word: &str) -> Result<Target, String> {
-    if let Some(r) = Ref::parse(word) {
-        return Ok(Target::Ref(r));
+/// A ref or a locator, left unresolved, and nothing after it.
+fn only_element(text: &str) -> Result<Element, String> {
+    let text = text.trim();
+    if let Some((locator, after)) = Locator::parse(text) {
+        expect_end(after)?;
+        return Ok(Element::Find(locator));
     }
-    if let Some((x, y)) = word.split_once(',')
-        && let (Ok(x), Ok(y)) = (x.trim().parse(), y.trim().parse())
-    {
-        return Ok(Target::Point(x, y));
-    }
-    Err(format!(
-        "expected a ref like b3 or a point like 120,48, got '{word}'"
-    ))
-}
-
-fn only_ref(word: &str) -> Result<Ref, String> {
-    Ref::parse(word.trim()).ok_or_else(|| format!("expected a ref like b3, got '{word}'"))
-}
-
-fn ref_then_rest(rest: &str) -> Result<(Ref, &str), String> {
-    let (first, after) = split_word(rest);
-    Ok((only_ref(first)?, after))
+    Ref::parse(text).map(Element::Ref).ok_or_else(|| {
+        format!("expected a ref like b3 or a locator like button \"Save\", got '{text}'")
+    })
 }
 
 fn split_word(text: &str) -> (&str, &str) {
@@ -422,7 +526,7 @@ mod tests {
         assert_eq!(
             Step::parse("wait gone e4 within 10s").unwrap(),
             Step::Wait {
-                until: Condition::Gone(r("e4")),
+                until: Condition::Gone(Element::Ref(r("e4"))),
                 within: Duration::from_secs(10)
             }
         );
@@ -444,6 +548,68 @@ mod tests {
             panic!()
         };
         assert!(combo.modifiers.cmd && combo.key == Key::Char('s'));
+    }
+
+    #[test]
+    fn locators_resolve_where_refs_go_and_waits_keep_them() {
+        let mut asked = Vec::new();
+        let mut resolve = |locator: &Locator| {
+            asked.push(locator.to_string());
+            Ok(r("b9"))
+        };
+        let steps = [
+            r#"click button "Save""#,
+            r#"type field[2] "Ada Lovelace""#,
+            r#"set slider "Volume" 40"#,
+            r#"drag row "A" to row[3]"#,
+            r#"pick popup "Font" Helvetica"#,
+        ];
+        let parsed: Vec<Step> = steps
+            .iter()
+            .map(|line| Step::parse_with(line, &mut resolve).unwrap())
+            .collect();
+        assert_eq!(
+            parsed[1],
+            Step::Type {
+                into: Some(r("b9")),
+                text: "Ada Lovelace".into()
+            }
+        );
+        assert_eq!(
+            asked,
+            [
+                r#"button "Save""#,
+                r#"field[2]"#,
+                r#"slider "Volume""#,
+                r#"row "A""#,
+                "row[3]",
+                r#"popup "Font""#
+            ]
+        );
+        let (wait, used) = Step::check(r#"wait gone sheet "Save changes?""#).unwrap();
+        assert!(!used);
+        assert!(matches!(
+            wait,
+            Step::Wait {
+                until: Condition::Gone(Element::Find(_)),
+                ..
+            }
+        ));
+        assert!(Step::check(r#"click button "Save""#).unwrap().1);
+        assert!(!Step::check("click b3").unwrap().1);
+        // Words that happen to be roles are still text to type.
+        assert_eq!(
+            Step::parse("type text").unwrap(),
+            Step::Type {
+                into: None,
+                text: "text".into()
+            }
+        );
+        assert!(
+            Step::parse(r#"click button "Save""#)
+                .unwrap_err()
+                .contains("needs a window")
+        );
     }
 
     #[test]

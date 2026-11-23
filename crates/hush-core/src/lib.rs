@@ -5,6 +5,7 @@
 pub mod cursor;
 pub mod diff;
 pub mod key;
+pub mod locator;
 pub mod menus;
 pub mod model;
 pub mod outline;
@@ -19,11 +20,12 @@ mod test_support;
 
 pub use diff::Diff;
 pub use key::{Key, KeyCombo, Modifiers, NamedKey};
+pub use locator::{Locator, Miss};
 pub use menus::MenuEntry;
 pub use model::{Actions, AppInfo, Image, Node, Rect, Role, Snapshot, States, WindowInfo};
 pub use outline::{OutlineOptions, View, approx_tokens};
 pub use platform::{Error, Op, Platform, Result, ScriptLanguage};
 pub use refs::{Ref, RefTable};
 pub use settle::{Activity, Outcome, Pace, Poll, Reason, Rules, Settle};
-pub use step::{Button, Condition, Direction, Step, Target};
+pub use step::{Button, Condition, Direction, Element, Step, Target};
 pub use timeline::{Input, Played, Timed};
