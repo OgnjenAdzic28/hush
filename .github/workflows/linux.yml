@@ -11,6 +11,7 @@ on:
       - "Cargo.lock"
       - ".github/workflows/linux.yml"
       - "scripts/linux-apps.sh"
+      - "scripts/linux-desktop.sh"
   push:
     branches: [main]
     paths:
@@ -79,9 +80,9 @@ jobs:
           retention-days: 7
 
   more-apps:
-    # The apps agents reach for: a GTK 3 and a GTK 4 editor, LibreOffice and
-    # Firefox, each started on Hush's display, read, typed into and pictured
-    # through the hush binary. Qt apps wait on #132.
+    # The apps agents reach for: a GTK 3, a GTK 4 and a Qt editor,
+    # LibreOffice and Firefox, each started on Hush's display, read, typed
+    # into and pictured through the hush binary.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -102,21 +103,53 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             xvfb dbus dbus-x11 at-spi2-core fontconfig fonts-dejavu-core \
             gnome-calculator mousepad gnome-text-editor \
-            libreoffice-writer libreoffice-gtk3 \
+            libreoffice-writer libreoffice-gtk3 featherpad \
             firefox gdb
       - name: Skip Firefox's first-run pages, as on a browser someone already uses
         run: |
           sudo install -d /etc/firefox/policies
           echo '{"policies":{"DontCheckDefaultBrowser":true,"OverrideFirstRunPage":"","OverridePostUpdatePage":"","UserMessaging":{"SkipOnboarding":true,"MoreFromMozilla":false}}}' \
             | sudo tee /etc/firefox/policies/policies.json
+      - name: Skip Chrome's first run, as on a browser someone already uses (Chrome comes with the runner)
+        run: |
+          # Chrome's first run opens a terms dialog it doesn't expose to
+          # accessibility; this file says the first run happened.
+          mkdir -p ~/.config/google-chrome && touch ~/.config/google-chrome/"First Run"
+          sudo install -d /etc/opt/chrome/policies/managed
+          echo '{"DefaultBrowserSettingEnabled":false,"PromotionsEnabled":false,"MetricsReportingEnabled":false,"BrowserSignin":0}' \
+            | sudo tee /etc/opt/chrome/policies/managed/hush.json
       - run: cargo build --release -p hush
       - name: Drive them through hush
-        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer firefox
+        run: xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush calculator gtk3 gtk4 writer qt firefox chrome
       - name: Keep the pictures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: linux-app-pictures
           path: ${{ runner.temp }}/hush-apps
+          if-no-files-found: ignore
+          retention-days: 7
+
+  desktop:
+    # A real desktop: GNOME Shell on Wayland, headless, with the person's
+    # own Calculator open on it. Hush must read and click it through
+    # accessibility, refuse raw keys and pictures of it, and keep the apps
+    # it starts on its own display, off the desktop.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gnome-shell gnome-calculator gnome-text-editor xvfb at-spi2-core dbus-x11
+      - run: cargo build --release -p hush
+      - run: dbus-run-session -- scripts/linux-desktop.sh target/release/hush
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-desktop
+          path: ${{ runner.temp }}/hush-desktop
           if-no-files-found: ignore
           retention-days: 7

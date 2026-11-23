@@ -109,7 +109,10 @@ impl LinuxPlatform {
         let Some(pid) = pid else {
             return Err(Error::Stale(format!("window \"{}\" closed", window.title)));
         };
-        let Some((_, screen)) = self.lane(false)?.filter(|(lane, _)| lane.holds(pid)) else {
+        let Some((_, screen)) = self
+            .lane(false)?
+            .filter(|(lane, screen)| runs_on(lane, screen, pid))
+        else {
             return Err(Error::Unsupported(refusal.into()));
         };
         let (found, frame) = screen.window_of(pid, window.frame).map_err(Error::Failed)?;
@@ -132,7 +135,7 @@ impl LinuxPlatform {
     /// can't reach the user.
     fn in_lane(&self, pid: Option<u32>) -> bool {
         match (pid, self.lane(false)) {
-            (Some(pid), Ok(Some((lane, _)))) => lane.holds(pid),
+            (Some(pid), Ok(Some((lane, screen)))) => runs_on(&lane, &screen, pid),
             _ => false,
         }
     }
@@ -149,7 +152,7 @@ impl LinuxPlatform {
 
     fn list(&self, bus: &Bus) -> Result<Vec<AppInfo>> {
         let running = block_on(apps::running(bus)).map_err(failed)?;
-        let lane = self.lane(false).ok().flatten().map(|(lane, _)| lane);
+        let lane = self.lane(false).ok().flatten();
         let mut roots = lock(&self.roots);
         roots.clear();
         let mut found = Vec::with_capacity(running.len());
@@ -158,7 +161,10 @@ impl LinuxPlatform {
                 roots.insert(pid, app.root.clone());
                 // Its window is active on Hush's display, which the user
                 // never sees: it isn't the user's front app.
-                if lane.is_some_and(|lane| lane.holds(pid)) {
+                if lane
+                    .as_ref()
+                    .is_some_and(|(lane, screen)| runs_on(lane, screen, pid))
+                {
                     app.info.frontmost = false;
                 }
             }
@@ -264,7 +270,9 @@ impl Platform for LinuxPlatform {
                     Typed::NoTarget | Typed::Ignored { focused: true } => {
                         self.send(window, |input| input.text(text))
                     }
-                    Typed::Ignored { focused: false } => Err(Error::Failed(act::IGNORED.into())),
+                    Typed::Ignored { focused: false } => {
+                        Err(Error::Failed(act::IGNORED_UNFOCUSED.into()))
+                    }
                 }
             }
             op => block_on(act::perform(&bus, &element, in_lane, op)),
@@ -304,10 +312,27 @@ impl Platform for LinuxPlatform {
     }
 
     fn launch(&self, app: &AppInfo) -> Result<()> {
-        let (lane, _) = self
+        let (lane, screen) = self
             .lane(true)?
             .ok_or_else(|| Error::Failed("Hush's display didn't start".into()))?;
-        lane.launch(app).map_err(Error::Failed)
+        // Already running but not yet on the accessibility bus. A second
+        // copy would hand off to a single-instance app and open a window on
+        // the person's desktop, so don't start one.
+        let running = apps::processes_of(app);
+        // Any one of them: a browser's helper processes may drop DISPLAY.
+        match running.first() {
+            Some(_) if running.iter().any(|pid| runs_on(&lane, &screen, *pid)) => Ok(()),
+            Some(_) => Err(Error::Failed(format!(
+                "{} is running on your desktop but hasn't shown up to accessibility yet; look again in a moment",
+                app.name
+            ))),
+            None => {
+                screen
+                    .announce_bus(self.bus()?.address())
+                    .map_err(Error::Failed)?;
+                lane.launch(app).map_err(Error::Failed)
+            }
+        }
     }
 
     fn script(&self, _app: &AppInfo, _source: &str, _language: ScriptLanguage) -> Result<String> {
@@ -315,4 +340,10 @@ impl Platform for LinuxPlatform {
             "AppleScript and JXA only exist on macOS".into(),
         ))
     }
+}
+
+/// Whether `pid` runs on Hush's display: by its environment, or, when that
+/// can't say (Chrome writes its process title over it), by its windows.
+fn runs_on(lane: &Lane, screen: &Screen, pid: u32) -> bool {
+    lane.holds(pid) || screen.has_window_of(pid)
 }

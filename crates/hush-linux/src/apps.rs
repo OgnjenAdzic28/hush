@@ -125,8 +125,29 @@ fn command(pid: u32) -> Option<String> {
     Some(comm.trim().to_owned())
 }
 
+/// This user's processes that run the installed app `app`, newest first.
+/// An app can be running before it shows up to accessibility: just
+/// started, or a toolkit that never registers.
+pub(crate) fn processes_of(app: &AppInfo) -> Vec<u32> {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    let mut found: Vec<u32> = entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok())
+        // Only this user's processes have a readable executable.
+        .filter(|pid| {
+            executable(*pid).is_some_and(|exe| {
+                installed::by_process(&exe, &arguments(*pid)).is_some_and(|e| e.id == app.id)
+            })
+        })
+        .collect();
+    found.sort_unstable_by(|a, b| b.cmp(a));
+    found
+}
+
 /// The process's command line after the program.
-fn arguments(pid: u32) -> Vec<String> {
+pub(crate) fn arguments(pid: u32) -> Vec<String> {
     let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
         return Vec::new();
     };
@@ -137,7 +158,7 @@ fn arguments(pid: u32) -> Vec<String> {
         .collect()
 }
 
-fn executable(pid: u32) -> Option<String> {
+pub(crate) fn executable(pid: u32) -> Option<String> {
     let path = std::fs::read_link(format!("/proc/{pid}/exe")).ok()?;
     Some(path.to_string_lossy().into_owned())
 }

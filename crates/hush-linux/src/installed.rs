@@ -61,7 +61,34 @@ fn runs(program: &str, exe: &Path) -> bool {
     let Some(found) = resolved(program) else {
         return false;
     };
-    found == exe || (exe.extension().is_some_and(|e| e == "bin") && exe.with_extension("") == found)
+    found == exe || starts_beside(&found, exe)
+}
+
+/// Whether the program an Exec line runs is built on Chromium (Chrome,
+/// Edge, Brave, and Electron apps such as VS Code), by the helpers Chromium
+/// ships beside its binary.
+pub(crate) fn chromium_based(exec: &str) -> bool {
+    let Some(found) = exec.split_whitespace().next().and_then(resolved) else {
+        return false;
+    };
+    found.parent().is_some_and(|folder| {
+        ["chrome-sandbox", "chrome_crashpad_handler"]
+            .iter()
+            .any(|helper| folder.join(helper).exists())
+    })
+}
+
+/// Whether `launcher` is a script that starts `exe` from its own folder, as
+/// `program/soffice` starts `soffice.bin` and `google-chrome` starts
+/// `chrome`. Not in a shared bin folder, where a script's neighbour is any
+/// other program (`/usr/bin/python3`).
+fn starts_beside(launcher: &Path, exe: &Path) -> bool {
+    let Some(folder) = launcher.parent() else {
+        return false;
+    };
+    exe.parent() == Some(folder)
+        && !folder.ends_with("bin")
+        && std::fs::read(launcher).is_ok_and(|head| head.starts_with(b"#!"))
 }
 
 /// Where `program` is on disk, links followed. Remembered, since every

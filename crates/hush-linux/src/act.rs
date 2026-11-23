@@ -21,8 +21,12 @@ const SHOW_MENU: [&str; 5] = ["showmenu", "show menu", "menu", "popup", "press"]
 const FOCUS_ON_USER_DISPLAY: &str = "focusing an element raises the app's window on Linux, which would take your focus; use set or type with its ref instead";
 
 const NO_TARGET: &str = "nothing editable has focus in this window; give type a ref";
-pub(crate) const IGNORED: &str =
-    "the app accepted the text but didn't insert it; focus the field, then type";
+/// The field didn't take the text through accessibility, on an app on the
+/// person's desktop, where Hush sends no key presses.
+const IGNORED: &str = "this field doesn't take text through accessibility, and Hush only types key presses into apps on its own display; use set on it, or quit the app and observe it again so Hush starts it there";
+/// The same on Hush's display, for a field without the keyboard focus.
+pub(crate) const IGNORED_UNFOCUSED: &str =
+    "this field doesn't take text through accessibility; focus it first (focus REF), then type";
 
 pub(crate) const NEEDS_LANE: &str = "keys and pointer input on Linux only go to apps Hush runs on its own display, so they can't reach yours; for this app use click, set and type on refs";
 
@@ -147,7 +151,12 @@ pub(crate) async fn type_text(
     };
     let (states, count) = futures_util::join!(bus.states(&target), bus.character_count(&target));
     let focused = states.is_ok_and(|s| s.has(state::FOCUSED));
-    let count = count.map_err(refuse)?;
+    // A focused field without the text interfaces (Chrome's address bar)
+    // still takes key presses.
+    let count = match count.map_err(refuse) {
+        Err(Error::Unsupported(_)) if focused => return Ok(Typed::Ignored { focused }),
+        count => count?,
+    };
     // At the caret only where the user would type: in the focused field.
     // An unfocused field's caret sits at 0, and text typed into a field by
     // ref is meant to go after what is there.
@@ -155,12 +164,14 @@ pub(crate) async fn type_text(
         true => bus.caret(&target).await.ok().flatten(),
         false => None,
     };
-    refused(
-        bus.insert_text(&target, caret.unwrap_or(count), text)
-            .await
-            .map_err(refuse)?,
-        "insert the text",
-    )?;
+    match bus
+        .insert_text(&target, caret.unwrap_or(count), text)
+        .await
+        .map_err(refuse)
+    {
+        Err(Error::Unsupported(_)) if focused => return Ok(Typed::Ignored { focused }),
+        inserted => refused(inserted?, "insert the text")?,
+    }
     let changed = match bus.character_count(&target).await {
         Ok(after) => after != count,
         // Can't tell; the app said it inserted the text.

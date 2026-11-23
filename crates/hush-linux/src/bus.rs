@@ -66,6 +66,7 @@ impl Element {
 #[derive(Debug)]
 pub(crate) struct Bus {
     connection: Connection,
+    address: String,
 }
 
 pub(crate) type Reply<T> = std::result::Result<T, zbus::Error>;
@@ -108,7 +109,10 @@ impl Bus {
             .build()
             .await
             .map_err(|e| format!("can't connect to the accessibility bus: {e}"))?;
-        Ok(Bus { connection })
+        Ok(Bus {
+            connection,
+            address,
+        })
     }
 
     async fn call<B, R>(
@@ -207,6 +211,11 @@ impl Bus {
     pub(crate) async fn number(&self, element: &Element) -> Reply<f64> {
         let value = self.property(element, VALUE, "CurrentValue").await?;
         f64::try_from(value).map_err(zbus::Error::Variant)
+    }
+
+    /// The accessibility bus's address, for apps Hush starts.
+    pub(crate) fn address(&self) -> &str {
+        &self.address
     }
 
     pub(crate) fn connection(&self) -> &Connection {

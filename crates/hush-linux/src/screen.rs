@@ -10,9 +10,10 @@ use hush_core::{Image, Rect};
 use x11rb::connection::Connection;
 use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, Drawable, ImageFormat, MapState, Window,
+    AtomEnum, ConnectionExt as _, Drawable, ImageFormat, MapState, PropMode, Window,
 };
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::lane::Lane;
 
@@ -66,6 +67,30 @@ impl Screen {
         })
     }
 
+    /// Puts the accessibility bus's address on the root window, as the bus
+    /// launcher does on an X desktop. Qt 5 reads it there before anything
+    /// else; asking the session bus instead, it contacts the registry
+    /// before it has connected and never registers.
+    pub(crate) fn announce_bus(&self, address: &str) -> X<()> {
+        let c = &self.connection;
+        let atom = c
+            .intern_atom(false, b"AT_SPI_BUS")
+            .map_err(x)?
+            .reply()
+            .map_err(x)?
+            .atom;
+        c.change_property8(
+            PropMode::REPLACE,
+            self.root,
+            atom,
+            AtomEnum::STRING,
+            address.as_bytes(),
+        )
+        .map_err(x)?
+        .check()
+        .map_err(x)
+    }
+
     pub(crate) fn connection(&self) -> &RustConnection {
         &self.connection
     }
@@ -100,6 +125,29 @@ impl Screen {
         }
         best.map(|(_, window, found)| (window, found))
             .ok_or_else(|| "the app has no window on Hush's display".to_owned())
+    }
+
+    /// Whether `pid` has a top-level window on this display. The proof an
+    /// app runs here when its environment can't say: Chrome writes its
+    /// process title over it.
+    pub(crate) fn has_window_of(&self, pid: u32) -> bool {
+        let c = &self.connection;
+        let Ok(Ok(tree)) = c.query_tree(self.root).map(|r| r.reply()) else {
+            return false;
+        };
+        let asked: Vec<_> = tree
+            .children
+            .iter()
+            .filter_map(|w| {
+                c.get_property(false, *w, self.net_wm_pid, AtomEnum::CARDINAL, 0, 1)
+                    .ok()
+            })
+            .collect();
+        asked.into_iter().any(|cookie| {
+            cookie
+                .reply()
+                .is_ok_and(|owner| owner.value32().and_then(|mut v| v.next()) == Some(pid))
+        })
     }
 
     /// The window's frame in root coordinates, if it is shown and is `pid`'s.

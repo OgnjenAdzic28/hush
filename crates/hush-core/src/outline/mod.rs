@@ -182,6 +182,20 @@ mod tests {
     }
 
     #[test]
+    fn a_heading_in_the_window_title_still_shows() {
+        let ui = snapshot(vec![
+            node(1, Role::Window, "Pricing - Acme", None),
+            node(2, Role::WebArea, "", Some(0)),
+            node(3, Role::Heading, "Pricing", Some(1)),
+        ]);
+        assert!(
+            outline(&ui).contains("heading \"Pricing\""),
+            "{}",
+            outline(&ui)
+        );
+    }
+
+    #[test]
     fn drops_wrappers_and_duplicate_labels_and_names_rows_by_their_text() {
         let mut save = node(3, Role::Button, "Save", Some(1));
         save.states = States::DISABLED;
