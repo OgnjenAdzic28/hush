@@ -53,6 +53,7 @@ impl Plan {
                 anchor: None,
                 depth: 0,
                 parent_name: "",
+                parent_is_window: false,
                 in_control: false,
             },
         );
@@ -116,6 +117,10 @@ struct Context<'n> {
     depth: u16,
     /// The name a child would repeat if it were a duplicate.
     parent_name: &'n str,
+    /// The name above is a window's title, which names the document, not
+    /// the text inside it: a page titled "Pricing - Acme" still shows its
+    /// "Pricing" heading.
+    parent_is_window: bool,
     /// Inside a button, link or other control, whose name already says
     /// what its icons and labels show.
     in_control: bool,
@@ -169,6 +174,7 @@ impl<H> Walk<'_, H> {
                 anchor: Some(index),
                 depth: context.depth + 1,
                 parent_name: &name,
+                parent_is_window: matches!(node.role, Role::Window | Role::Dialog | Role::Sheet),
                 in_control: context.in_control || node.role.is_control(),
             }
         } else {
@@ -235,8 +241,10 @@ fn worth_a_line<H>(node: &Node<H>, name: &str, context: &Context<'_>) -> bool {
         Role::Text | Role::Heading | Role::Image => {
             // Short text ("3", "OK") appears inside unrelated labels by
             // chance, so only longer text is matched as part of one.
-            let repeated =
-                repeats_parent || (name.chars().count() >= 4 && context.parent_name.contains(name));
+            let repeated = repeats_parent
+                || (!context.parent_is_window
+                    && name.chars().count() >= 4
+                    && context.parent_name.contains(name));
             !context.in_control && !name.is_empty() && !repeated
         }
         role if role.is_transparent() => !context.in_control && !name.is_empty() && !repeats_parent,

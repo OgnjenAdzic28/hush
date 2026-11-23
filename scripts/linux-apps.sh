@@ -5,8 +5,9 @@
 #
 #   xvfb-run -a dbus-run-session -- scripts/linux-apps.sh target/release/hush APP...
 #
-# APP is one of: calculator, gtk3, gtk4, writer, qt, firefox, chrome. When an app
-# leaves something out, scripts/atspi-tree.py prints what it reports.
+# APP is one of: calculator, gtk3, gtk4, writer, qt, firefox, chrome. When an
+# app's outline looks wrong, these show what it reports and what Hush reads:
+# scripts/atspi-tree.py, scripts/atspi-raw.sh and the hush-linux `tree` example.
 set -euo pipefail
 
 hush=$1
@@ -127,37 +128,10 @@ check_firefox() {
 
 # Chromium's family, the same way: load a page and read its heading.
 check_chrome() {
-  opened "Google Chrome" 60 && pictured "Google Chrome" chrome-start || return 1
-  if ! h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return"; then
-    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)" || true
-    return 1
-  fi
-  if ! shows "Google Chrome" 'heading "hello from hush ✓"' 20; then
-    python3 - <<'PY'
-import pyatspi
-def find(node, depth=0):
-    if depth > 30 or node is None: return None
-    if node.getRole() == pyatspi.ROLE_DOCUMENT_WEB: return node
-    for i in range(node.childCount):
-        hit = find(node.getChildAtIndex(i), depth + 1)
-        if hit: return hit
-for app in pyatspi.Registry.getDesktop(0):
-    if app is None or "chrome" not in app.name.lower(): continue
-    doc = find(app)
-    while doc is not None:
-        states = [pyatspi.stateToString(s) for s in doc.getState().getStates()]
-        keep = [s for s in states if s in ("showing", "visible", "sensitive")]
-        print(doc.getRoleName(), repr(doc.name)[:40], keep, "index", doc.getIndexInParent())
-        doc = doc.parent
-PY
-    if [ -x target/release/examples/tree ]; then
-      target/release/examples/tree "Google Chrome" >"$out/chrome-tree.txt" 2>&1
-      wc -l "$out/chrome-tree.txt"
-      grep -n -B4 -A2 -E "WebArea|Heading" "$out/chrome-tree.txt" | cut -c1-200 | head -40
-    fi
-    return 1
-  fi
-  pictured "Google Chrome" chrome
+  opened "Google Chrome" 60 && pictured "Google Chrome" chrome-start &&
+    h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return" &&
+    shows "Google Chrome" 'heading "hello from hush ✓"' 20 &&
+    pictured "Google Chrome" chrome
 }
 
 for app in "$@"; do
