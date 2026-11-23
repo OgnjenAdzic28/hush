@@ -159,6 +159,21 @@ back to where it was on `unlane`, the moment you switch to its app, or when the 
 On Linux the lane is a hidden X server that Hush starts for itself. Every app an agent opens runs
 there from the start, whether your desktop is X11 or Wayland.
 
+## Limits
+
+Decide what agents may touch, app by app, in `~/.config/hush/limits`:
+
+```text
+never 1Password, Keychain Access, Messages   # agents can't see these
+read Terminal, Mail                          # agents can read these, not act on them
+only Notes, TextEdit, Terminal, Mail         # with an only line, every other app is off limits
+```
+
+Names are app names or bundle ids. `hush apps` marks limited apps, and a refused call tells the
+agent the user chose it, so it reports back instead of trying something else. Every command and
+new MCP session reads the file, so an edit applies at once. A file with a mistake stops Hush until
+it's fixed, so nothing runs without the limits by accident.
+
 ## Recording demos
 
 `record` films a window while Hush works in it, lane included, and draws an agent cursor into the

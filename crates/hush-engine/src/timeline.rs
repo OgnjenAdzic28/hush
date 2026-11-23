@@ -16,6 +16,7 @@ impl<P: Platform> Engine<P> {
     ) -> Result<String> {
         let events = timeline::parse(lines).map_err(hush_core::Error::Failed)?;
         let (app, window) = self.target(app, window)?;
+        self.limits.check(&app, hush_core::Access::Act)?;
         let length = events.last().map(|e| e.at).unwrap_or_default();
         let played = self.platform.play(&app, &window, &events)?;
         Ok(format!("# {}\n", played.summary(length)))

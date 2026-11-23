@@ -17,8 +17,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use hush_core::{
-    AppInfo, Diff, Error, Image, OutlineOptions, Pace, Platform, Ref, Result, ScriptLanguage,
-    WindowInfo,
+    Access, AppInfo, Diff, Error, Image, Limits, OutlineOptions, Pace, Platform, Ref, Result,
+    ScriptLanguage, WindowInfo,
 };
 
 use mirror::Mirror;
@@ -45,6 +45,8 @@ pub struct Engine<P: Platform> {
     options: OutlineOptions,
     recording: Option<record::Recording>,
     journal: journal::Journal,
+    /// What the user allows agents to do, app by app.
+    limits: Limits,
 }
 
 impl<P: Platform> std::fmt::Debug for Engine<P> {
@@ -64,7 +66,13 @@ impl<P: Platform> Engine<P> {
             options: OutlineOptions::default(),
             recording: None,
             journal: journal::Journal::default(),
+            limits: Limits::default(),
         }
+    }
+
+    /// Applies the user's limits to every call from now on.
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
     }
 
     /// One line per app: name, whether it runs, and where it's installed.
@@ -83,7 +91,10 @@ impl<P: Platform> Engine<P> {
                 (Some(_), false) => "running".to_owned(),
                 (None, _) => format!("installed · {}", app.path.as_deref().unwrap_or("")),
             };
-            out.push_str(&format!("{} · {state}\n", app.name));
+            match self.limits.mark(&app) {
+                Some(mark) => out.push_str(&format!("{} · {state} · {mark}\n", app.name)),
+                None => out.push_str(&format!("{} · {state}\n", app.name)),
+            }
         }
         Ok(out)
     }
@@ -180,6 +191,7 @@ impl<P: Platform> Engine<P> {
             path: None,
             frontmost: false,
         });
+        self.limits.check(&info, Access::Act)?;
         self.platform.script(&info, source, language)
     }
 
