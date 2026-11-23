@@ -64,6 +64,20 @@ fn runs(program: &str, exe: &Path) -> bool {
     found == exe || starts_beside(&found, exe)
 }
 
+/// Whether the program an Exec line runs is built on Chromium (Chrome,
+/// Edge, Brave, and Electron apps such as VS Code), by the helpers Chromium
+/// ships beside its binary.
+pub(crate) fn chromium_based(exec: &str) -> bool {
+    let Some(found) = exec.split_whitespace().next().and_then(resolved) else {
+        return false;
+    };
+    found.parent().is_some_and(|folder| {
+        ["chrome-sandbox", "chrome_crashpad_handler"]
+            .iter()
+            .any(|helper| folder.join(helper).exists())
+    })
+}
+
 /// Whether `launcher` is a script that starts `exe` from its own folder, as
 /// `program/soffice` starts `soffice.bin` and `google-chrome` starts
 /// `chrome`. Not in a shared bin folder, where a script's neighbour is any

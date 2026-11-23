@@ -129,11 +129,11 @@ check_firefox() {
 check_chrome() {
   opened "Google Chrome" 60 && pictured "Google Chrome" chrome-start || return 1
   if ! h act "Google Chrome" "key ctrl+l" "type data:text/html;charset=utf-8,<h1>hello from hush ✓</h1>" "key Return"; then
-    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)"
+    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)" || true
     return 1
   fi
   if ! shows "Google Chrome" 'heading "hello from hush ✓"' 20; then
-    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)"
+    bash scripts/atspi-raw.sh "$(pgrep -xo chrome)" || true
     return 1
   fi
   pictured "Google Chrome" chrome

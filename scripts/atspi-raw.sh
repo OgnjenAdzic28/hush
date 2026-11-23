@@ -5,7 +5,7 @@ pid=$1
 addr=$(dbus-send --session --print-reply=literal --dest=org.a11y.Bus /org/a11y/bus org.a11y.Bus.GetAddress | tr -d ' ')
 name=""
 for n in $(gdbus call --address "$addr" -d org.freedesktop.DBus -o /org/freedesktop/DBus -m org.freedesktop.DBus.ListNames | grep -oE "':[0-9.]+'" | tr -d "'"); do
-  p=$(gdbus call --address "$addr" -d org.freedesktop.DBus -o /org/freedesktop/DBus -m org.freedesktop.DBus.GetConnectionUnixProcessID "$n" 2>/dev/null | grep -oE '[0-9]+' | head -1)
+  p=$(gdbus call --address "$addr" -d org.freedesktop.DBus -o /org/freedesktop/DBus -m org.freedesktop.DBus.GetConnectionUnixProcessID "$n" 2>/dev/null | grep -oE 'uint32 [0-9]+' | cut -d' ' -f2)
   [ "$p" = "$pid" ] && name=$n && break
 done
 echo "bus name of $pid: $name"

@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 
 use hush_core::AppInfo;
 
+use crate::installed;
+
 /// The lane's size. Big enough for any app's default window.
 const SCREEN: &str = "2560x1600x24";
 
@@ -124,9 +126,15 @@ impl Lane {
             .path
             .as_deref()
             .ok_or_else(|| format!("{} has no command to start it", app.name))?;
+        // Chromium builds its accessibility tree below the window only when
+        // it finds Orca running, or when told to.
+        let flags = match installed::chromium_based(exec) {
+            true => " --force-renderer-accessibility",
+            false => "",
+        };
         Command::new("sh")
             .arg("-c")
-            .arg(format!("exec {exec}"))
+            .arg(format!("exec {exec}{flags}"))
             .env("DISPLAY", self.name())
             // Toolkits prefer Wayland when it is there; on the lane they
             // must use X.
