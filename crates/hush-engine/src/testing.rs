@@ -131,7 +131,7 @@ impl<P: Platform> Engine<P> {
     ) -> std::result::Result<(), (usize, String)> {
         if movie.is_some() && !self.is_recording_any() {
             // A movie that can't start shouldn't fail the test it was for.
-            let _ = self.record_start(&at.app, at.window.as_deref());
+            let _ = self.record_test(&at.app, at.window.as_deref());
         }
         let steps: Vec<String> = lines
             .iter()

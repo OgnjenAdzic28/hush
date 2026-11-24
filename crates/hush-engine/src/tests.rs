@@ -281,6 +281,26 @@ impl Platform for Fake {
         Err(Error::Unsupported("no screen".into()))
     }
 
+    fn record_start(&self, window: &WindowInfo) -> Result<u64> {
+        self.changed(format!("RecordStart({})", window.id));
+        Ok(window.id)
+    }
+
+    fn record_cancel(&self, id: u64) {
+        self.changed(format!("RecordCancel({id})"));
+    }
+
+    fn record_stop(
+        &self,
+        id: u64,
+        _marks: &[hush_core::cursor::Mark],
+        _label: &str,
+        _out: &std::path::Path,
+    ) -> Result<String> {
+        self.changed(format!("RecordStop({id})"));
+        Ok("wrote the movie".into())
+    }
+
     fn script(&self, _app: &AppInfo, _source: &str, _language: ScriptLanguage) -> Result<String> {
         Ok("done".into())
     }
@@ -772,4 +792,56 @@ fn a_named_window_keeps_the_batch_even_when_another_opens() {
     let world = engine.platform().world.borrow();
     assert_eq!(world.name, "Q4");
     assert_eq!(world.second.as_deref(), Some(""));
+}
+
+#[test]
+fn a_tests_movie_follows_its_steps_to_a_window_they_open() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().opens_on_cmd_n = true;
+    let run = engine
+        .test(
+            "app Editor\nkey cmd+n\ntype field \"Name\" \"Q4\"\nexpect field \"Name\" = \"Q5\" within 50ms\n",
+            Some("/tmp/never-written.mp4"),
+        )
+        .unwrap();
+    assert!(run.failure.is_some());
+    let records: Vec<String> = engine
+        .platform()
+        .ops()
+        .into_iter()
+        .filter(|op| op.starts_with("Record"))
+        .collect();
+    assert_eq!(
+        records,
+        [
+            "RecordStart(7)",
+            "RecordCancel(7)",
+            "RecordStart(8)",
+            "RecordStop(8)"
+        ]
+    );
+}
+
+#[test]
+fn a_recording_the_agent_started_stays_on_its_window() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().opens_on_cmd_n = true;
+    engine.record_start("Editor", None).unwrap();
+    engine
+        .act(
+            "Editor",
+            None,
+            &steps(&["key cmd+n", "type field \"Name\" \"Q4\""]),
+        )
+        .unwrap();
+    engine
+        .record_stop(None, Some("/tmp/never-written.mp4"))
+        .unwrap();
+    let records: Vec<String> = engine
+        .platform()
+        .ops()
+        .into_iter()
+        .filter(|op| op.starts_with("Record"))
+        .collect();
+    assert_eq!(records, ["RecordStart(7)", "RecordStop(7)"]);
 }

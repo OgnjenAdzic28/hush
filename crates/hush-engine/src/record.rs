@@ -16,11 +16,29 @@ pub(crate) struct Recording {
     id: u64,
     started: Instant,
     marks: Vec<Mark>,
+    /// A test's recording, which moves when the test's steps move to a
+    /// window they opened (see `follow`).
+    follows: bool,
 }
 
 impl<P: Platform> Engine<P> {
     /// Starts recording the window; acts on it leave marks for the cursor.
     pub fn record_start(&mut self, app: &str, window: Option<&str>) -> Result<String> {
+        self.start_recording(app, window, false)
+    }
+
+    /// Starts a test's recording, which follows the test's steps to a
+    /// window they open.
+    pub(crate) fn record_test(&mut self, app: &str, window: Option<&str>) -> Result<String> {
+        self.start_recording(app, window, true)
+    }
+
+    fn start_recording(
+        &mut self,
+        app: &str,
+        window: Option<&str>,
+        follows: bool,
+    ) -> Result<String> {
         if self.recording.is_some() {
             return Err(Error::Failed(
                 "a recording is already running; stop it first".into(),
@@ -33,6 +51,7 @@ impl<P: Platform> Engine<P> {
             id,
             started: Instant::now(),
             marks: Vec::new(),
+            follows,
         });
         Ok(format!(
             "recording {} · window \"{}\"; act on it, then stop with record stop",
@@ -60,6 +79,31 @@ impl<P: Platform> Engine<P> {
             label.unwrap_or("Hush"),
             &out,
         )
+    }
+
+    /// Moves a test's recording from `from` to `to`, the window the steps
+    /// just moved to, so a failed test's movie shows the step that failed.
+    /// A capture can't change windows, so the movie starts again at `to`.
+    /// A recording the agent started stays on the window it chose.
+    pub(crate) fn follow(&mut self, app: &AppInfo, from: &WindowInfo, to: &WindowInfo) {
+        let Some(recording) = &self.recording else {
+            return;
+        };
+        if !recording.follows || recording.window != key(app, from) {
+            return;
+        }
+        self.platform.record_cancel(recording.id);
+        self.recording = None;
+        // A movie that can't start shouldn't fail the test it was for.
+        if let Ok(id) = self.platform.record_start(to) {
+            self.recording = Some(Recording {
+                window: key(app, to),
+                id,
+                started: Instant::now(),
+                marks: Vec::new(),
+                follows: true,
+            });
+        }
     }
 
     /// `at` as time since the recording started.
