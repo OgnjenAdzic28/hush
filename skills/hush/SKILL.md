@@ -54,7 +54,8 @@ user to run `hush setup` or let `hush` run outside your sandbox. Don't try to wo
    where Hush can't work.
 
    The reply is only what changed (`+` added, `-` removed, `~` changed), so read it instead of
-   observing again.
+   observing again. When a step opens a new window (`key cmd+n`, a dialog), the steps after it
+   run there and the reply says so, unless you named a window with `--window`.
 4. **Repeat** from the reply. `hush observe Notes` again returns only changes since your last
    read; `--full` gives the whole outline.
 

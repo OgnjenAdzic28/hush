@@ -74,14 +74,22 @@ impl<P: Platform> Engine<P> {
             }
         }
         let window_title = window;
-        let (app, window) = self.target(app, window)?;
+        let (app, mut window) = self.target(app, window)?;
         self.limits.check(&app, Access::Act)?;
-        let key = key(&app, &window);
+        let mut key = key(&app, &window);
         if let Entry::Vacant(entry) = self.mirrors.entry(key) {
             let snapshot = self.platform.read(&app, &window)?;
             let mirror = entry.insert(Mirror::new(snapshot, &self.options));
             mirror.mark_seen();
         }
+        // Unless the caller named a window, a step that opens one (cmd+n,
+        // File > New, a button that opens a dialog) takes the rest of the
+        // batch with it, so `type` lands where the agent expects.
+        let mut known = match window_title {
+            None => Some(self.window_ids(&app)),
+            Some(_) => None,
+        };
+        let mut moved = None;
 
         let started = Instant::now();
         let mut done = 0;
@@ -110,6 +118,31 @@ impl<P: Platform> Engine<P> {
                         .lines;
                     self.journal
                         .note(&app.name, window_title, &step, &before, after);
+                    let opened = match (&mut known, &step) {
+                        (Some(known), step) if !matches!(step, Step::Wait { .. }) => {
+                            self.opened(&app, known)
+                        }
+                        _ => None,
+                    };
+                    if let Some(opened) = opened {
+                        let opened_key = crate::key(&app, &opened);
+                        if let Entry::Vacant(entry) = self.mirrors.entry(opened_key) {
+                            // Not marked seen: the report shows the new window whole.
+                            match self.platform.read(&app, &opened) {
+                                Ok(snapshot) => {
+                                    entry.insert(Mirror::new(snapshot, &self.options));
+                                }
+                                Err(error) => {
+                                    stopped = Some((i, error));
+                                    break;
+                                }
+                            }
+                        }
+                        moved = Some((i, opened.title.clone()));
+                        window = opened;
+                        key = opened_key;
+                        dirty = false;
+                    }
                 }
                 Err(error) => {
                     stopped = Some((i, error));
@@ -127,6 +160,13 @@ impl<P: Platform> Engine<P> {
             let _ = write!(out, " · {settle}");
         }
         out.push('\n');
+        if let Some((i, title)) = &moved {
+            let _ = writeln!(
+                out,
+                "# step {} opened window \"{title}\"; the steps after it ran there",
+                i + 1
+            );
+        }
         if let Some((i, error)) = &stopped {
             let _ = writeln!(
                 out,
