@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::key::KeyCombo;
 use crate::locator::Locator;
+use crate::model::Role;
 use crate::refs::Ref;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -149,21 +150,27 @@ impl Step {
                     value: text(value),
                 }
             }
-            "type" => match parser.element_then_value(rest) {
-                Ok((r, after)) if !after.is_empty() => Step::Type {
+            "type" => match (parser.element_then_value(rest), Locator::parse(rest)) {
+                (Ok((r, after)), _) if !after.is_empty() => Step::Type {
                     into: Some(r),
                     text: text(after),
                 },
-                // A locator that names nothing here, with text after it, is
-                // a mistake worth reporting rather than text to type.
-                // `field[2] "Ada"` reads as a locator with nothing after it,
-                // but its quoted part is the value, so it counts too.
-                Err(error)
-                    if Locator::parse(rest).is_some_and(|(locator, after)| {
-                        !after.is_empty() || locator.nth.is_some()
-                    }) =>
-                {
-                    return Err(error);
+                // Text that reads as a locator is never typed as it stands:
+                // `type textarea "Hi"` means the textarea, so say how to
+                // name it instead of typing the words `textarea "Hi"`.
+                (result, Some((locator, after))) => {
+                    let hint = match (&locator.name, locator.nth, after.is_empty()) {
+                        (Some(name), None, true) => format!(
+                            "; to type \"{name}\" into a {role} with no name, write {role}[1] \"{name}\"",
+                            role = locator.role.word()
+                        ),
+                        _ => String::new(),
+                    };
+                    let error = match result {
+                        Err(error) => error,
+                        Ok(_) => format!("type {locator} has no text after it"),
+                    };
+                    return Err(format!("{error}{hint}"));
                 }
                 _ => Step::Type {
                     into: None,
@@ -417,7 +424,7 @@ impl Parser<'_, '_> {
             }
         }
         let (r, after) = self.element(rest).map_err(|error| {
-            if Locator::parse(rest).is_some() {
+            if Locator::parse(rest).is_some() || bare_role(word).is_some() {
                 error
             } else {
                 format!("expected a ref like b3, a point like 120,48 or a locator like button \"Save\", got '{word}'")
@@ -455,7 +462,9 @@ impl Parser<'_, '_> {
         }
         let (word, after) = split_word(rest);
         let r = Ref::parse(word).ok_or_else(|| {
-            format!("expected a ref like b3 or a locator like button \"Save\", got '{word}'")
+            bare_role(word).unwrap_or_else(|| {
+                format!("expected a ref like b3 or a locator like button \"Save\", got '{word}'")
+            })
         })?;
         Ok((r, after))
     }
@@ -465,6 +474,14 @@ impl Parser<'_, '_> {
         expect_end(after)?;
         Ok(r)
     }
+}
+
+/// Says how to fix a role word used alone, like `textarea`, which could
+/// be any of the window's textareas.
+fn bare_role(word: &str) -> Option<String> {
+    Role::from_word(word).map(|_| {
+        format!("'{word}' alone names no element; add its name or which one: {word} \"Name\" or {word}[1]")
+    })
 }
 
 fn point(word: &str) -> Option<Target> {
@@ -498,9 +515,11 @@ fn wait(rest: &str) -> Result<Step, String> {
         _ => match duration(word) {
             Ok(elapsed) if after.is_empty() => Condition::Elapsed(elapsed),
             _ => Condition::Exists(only_element(condition).map_err(|_| {
-                format!(
-                    "wait needs gone REF, REF, REF = VALUE, text \"T\" or a time, got '{condition}'"
-                )
+                bare_role(word).unwrap_or_else(|| {
+                    format!(
+                        "wait needs gone REF, REF, REF = VALUE, text \"T\" or a time, got '{condition}'"
+                    )
+                })
             })?),
         },
     };
@@ -769,6 +788,20 @@ mod tests {
                 "not here",
                 "{line}"
             );
+        }
+        // A role and a quoted name is a locator, so it is never typed as it
+        // stands; the error says how to reach an unnamed element.
+        let hint = r#"to type "Hi" into a textarea with no name, write textarea[1] "Hi""#;
+        let missed = Step::parse_with(r#"type textarea "Hi""#, &mut missing).unwrap_err();
+        assert_eq!(missed, format!("not here; {hint}"));
+        let checked = Step::check(r#"type textarea "Hi""#).unwrap_err();
+        assert!(
+            checked.contains("has no text after it") && checked.contains(hint),
+            "{checked}"
+        );
+        for bare in ["wait textarea", r#"wait textarea = "Hi""#, "click textarea"] {
+            let error = Step::check(bare).unwrap_err();
+            assert!(error.contains("textarea[1]"), "{bare}: {error}");
         }
     }
 

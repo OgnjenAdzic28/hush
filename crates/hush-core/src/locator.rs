@@ -85,7 +85,7 @@ impl Locator {
     }
 
     /// The shortest locator that finds `r` in `lines` again: its role and
-    /// name, with `[N]` when that alone is ambiguous.
+    /// name, with `[N]` when that alone is ambiguous or there is no name.
     pub fn of(lines: &[Line], r: Ref) -> Option<Locator> {
         let line = lines.iter().find(|line| line.r == r)?;
         let (role, name) = split_head(&line.head)?;
@@ -94,7 +94,8 @@ impl Locator {
             name: (!name.is_empty()).then(|| name.trim_end_matches('…').to_owned()),
             nth: None,
         };
-        if locator.find(lines) == Ok(r) {
+        // Without a name a locator needs `[N]`, or it reads as plain text.
+        if locator.name.is_some() && locator.find(lines) == Ok(r) {
             return Some(locator);
         }
         let at = locator.matches(lines).iter().position(|&m| m == r)?;
@@ -343,5 +344,14 @@ mod tests {
             Locator::of(&window, r("e4")).unwrap().to_string(),
             r#"link "Say \"hi\"""#
         );
+    }
+
+    #[test]
+    fn an_only_element_with_no_name_still_gets_an_index() {
+        // A bare `textarea` would read as text to type, not a locator.
+        let window = lines(&[r#"button "OK""#, "textarea"]);
+        let found = Locator::of(&window, r("e2")).unwrap();
+        assert_eq!(found.to_string(), "textarea[1]");
+        assert_eq!(Locator::parse("textarea[1]").unwrap().0, found);
     }
 }
