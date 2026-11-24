@@ -138,6 +138,7 @@ impl<P: Platform> Engine<P> {
                                 }
                             }
                         }
+                        self.follow(&app, &window, &opened);
                         moved = Some((i, opened.title.clone()));
                         window = opened;
                         key = opened_key;
