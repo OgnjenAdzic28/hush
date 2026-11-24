@@ -42,6 +42,10 @@ struct World {
     windowless: bool,
     /// The app is installed but not running until it is launched.
     stopped: bool,
+    /// cmd+n opens a second window, which becomes the main one.
+    opens_on_cmd_n: bool,
+    /// The second window is open; its Name field holds this text.
+    second: Option<String>,
     ops: Vec<String>,
     activity: Activity,
 }
@@ -140,7 +144,17 @@ impl Platform for Fake {
         if self.world.borrow().windowless {
             return Ok(Vec::new());
         }
-        Ok(vec![window()])
+        let mut windows = vec![window()];
+        if self.world.borrow().second.is_some() {
+            windows[0].main = false;
+            windows.push(WindowInfo {
+                id: 8,
+                title: "Doc 2".into(),
+                main: true,
+                ..window()
+            });
+        }
+        Ok(windows)
     }
 
     fn press_menu(&self, _app: &AppInfo, path: &[String]) -> Result<()> {
@@ -165,7 +179,10 @@ impl Platform for Fake {
             nodes.push(element(H::Stray, Role::MenuItem, "Helvetica", Some(0)));
         }
         let mut name = element(H::Name, Role::TextField, "Name", Some(0));
-        name.value = Some(world.name.clone());
+        name.value = Some(match (window.id, &world.second) {
+            (8, Some(second)) => second.clone(),
+            _ => world.name.clone(),
+        });
         nodes.push(name);
         let mut font = element(H::Font, Role::PopUp, "Font", Some(0));
         font.value = Some(world.font.into());
@@ -218,7 +235,7 @@ impl Platform for Fake {
         self.world.borrow().activity
     }
 
-    fn perform(&self, _app: &AppInfo, _window: &WindowInfo, op: Op<'_, H>) -> Result<()> {
+    fn perform(&self, _app: &AppInfo, window: &WindowInfo, op: Op<'_, H>) -> Result<()> {
         let text = format!("{op:?}");
         match op {
             Op::Press(_) if self.world.borrow().press_unsupported => {
@@ -235,8 +252,20 @@ impl Platform for Fake {
                 world.font = "Helvetica";
                 world.menu_open = world.menu_sticks;
             }
-            Op::Key { .. } => self.world.borrow_mut().menu_open = false,
-            Op::Type { text, .. } => self.world.borrow_mut().name.push_str(text),
+            Op::Key { combo, .. } => {
+                let mut world = self.world.borrow_mut();
+                world.menu_open = false;
+                if world.opens_on_cmd_n && combo.to_string() == "cmd+n" {
+                    world.second = Some(String::new());
+                }
+            }
+            Op::Type { text, .. } => {
+                let mut world = self.world.borrow_mut();
+                match (window.id, &mut world.second) {
+                    (8, Some(second)) => second.push_str(text),
+                    _ => world.name.push_str(text),
+                }
+            }
             _ => {}
         }
         self.changed(text);
@@ -706,4 +735,41 @@ fn limits_turn_scripts_off_since_a_script_can_reach_any_app() {
             .script("Editor", "beep", ScriptLanguage::AppleScript)
             .is_ok()
     );
+}
+
+#[test]
+fn steps_after_one_that_opens_a_window_go_to_that_window() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().opens_on_cmd_n = true;
+    let report = engine
+        .act(
+            "Editor",
+            None,
+            &steps(&["key cmd+n", "type field \"Name\" \"Q4\""]),
+        )
+        .unwrap();
+    assert!(report.starts_with("# 2/2 steps"), "{report}");
+    assert!(
+        report.contains("# step 1 opened window \"Doc 2\"; the steps after it ran there"),
+        "{report}"
+    );
+    let world = engine.platform().world.borrow();
+    assert_eq!(world.second.as_deref(), Some("Q4"));
+    assert_eq!(world.name, "", "the first window wasn't typed into");
+}
+
+#[test]
+fn a_named_window_keeps_the_batch_even_when_another_opens() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().opens_on_cmd_n = true;
+    engine
+        .act(
+            "Editor",
+            Some("Doc"),
+            &steps(&["key cmd+n", "type field \"Name\" \"Q4\""]),
+        )
+        .unwrap();
+    let world = engine.platform().world.borrow();
+    assert_eq!(world.name, "Q4");
+    assert_eq!(world.second.as_deref(), Some(""));
 }

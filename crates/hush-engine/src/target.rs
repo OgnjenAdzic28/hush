@@ -1,5 +1,6 @@
 //! Finding the app and window a call is about.
 
+use std::collections::HashSet;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -49,6 +50,26 @@ impl<P: Platform> Engine<P> {
             }));
         };
         Ok((app, chosen))
+    }
+
+    /// The ids of the app's windows; none when they can't be listed.
+    pub(crate) fn window_ids(&self, app: &AppInfo) -> HashSet<u64> {
+        self.platform
+            .windows(app)
+            .map(|windows| windows.iter().map(|w| w.id).collect())
+            .unwrap_or_default()
+    }
+
+    /// The app's main window, when it is one that wasn't in `known`. Every
+    /// window seen is added to `known`, so each one is followed once.
+    pub(crate) fn opened(&self, app: &AppInfo, known: &mut HashSet<u64>) -> Option<WindowInfo> {
+        let windows = self.platform.windows(app).ok()?;
+        let new = windows
+            .iter()
+            .find(|w| w.main && !w.minimized && !known.contains(&w.id))
+            .cloned();
+        known.extend(windows.iter().map(|w| w.id));
+        new
     }
 
     /// Starts the installed app named exactly `query` when it isn't
