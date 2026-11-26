@@ -43,7 +43,7 @@ No tool took the front from the user in these runs.
 
 | Tool | First read of the window | Each later read | Tool list on every request (MCP) |
 |---|---|---|---|
-| **Hush** | **~94** | **12** when nothing changed (it sends a diff) | **598** (5 tools; 755 with `timeline`, added later) |
+| **Hush** | **~94** | **12** when nothing changed (it sends a diff) | **972** (7 tools, at 0.3.0; 598 for the 5 tools it had on 15 Nov) |
 | open-computer-use | ~178 | ~128 | 2,654 (11 tools) |
 | agent-desktop | ~306 | ~308 | 10,514 (75 tools) |
 | Peekaboo | ~750 | ~752 | 13,847 (26 tools) |

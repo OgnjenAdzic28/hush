@@ -20,7 +20,7 @@ Same window, same machine, one round of read, click, type, read
 
 | Tool | Round | Works hidden | Works on another Space | Tool list (MCP) |
 |---|---|---|---|---|
-| **Hush** | **178 ms** | yes | yes | **598 tokens**[^tools] |
+| **Hush** | **178 ms** | yes | yes | **972 tokens**[^tools] |
 | agent-desktop | 653 ms | yes | no | 10,514 tokens |
 | cua-driver | 1,134 ms | yes | mostly | 50,397 tokens |
 | Peekaboo | 3,506 ms | no | no | 13,847 tokens |
@@ -30,7 +30,7 @@ On [Cua Driver Bench v2](docs/benchmark.md)'s background tasks, agents on Hush w
 Claude Sonnet 5.5 and with Claude Haiku 5.5, the user never disturbed once. Sonnet took a median
 17.8 s per task.
 
-[^tools]: Five tools. With `timeline`, 755 tokens; with the menu catalog and `record`, about 920.
+[^tools]: All seven tools, measured at 0.3.0. The other tool lists were measured on 15 Nov 2026.
 
 ## What an agent sees
 
