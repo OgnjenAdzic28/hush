@@ -104,7 +104,9 @@ pub enum Step {
         to: Target,
     },
     /// Move the window to Hush's lane: a display the user can't see, where
-    /// it renders and takes pointer input without being on screen.
+    /// it renders and takes pointer input without being on screen. In an app
+    /// the user is using, the platform opens the agent a window of its own
+    /// there instead.
     Lane,
     /// Put the window back where it was before `Lane`.
     Unlane,
@@ -117,7 +119,7 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 pub const SYNTAX: &str = "click REF|X,Y · double REF · right REF · set REF VALUE · type [REF] TEXT · \
 key COMBO [xN] · menu A > B · pick REF OPTION · select REF · focus REF · \
 scroll REF up|down|left|right [N] · show REF · drag REF|X,Y to REF|X,Y (to a ref: takes its place) · wait gone REF|REF|REF = V|text \"T\"|500ms [within 10s] · \
-lane (move the window off screen, where it still renders and takes clicks) · unlane (put it back) · \
+lane (move the window off screen, where it still renders and takes clicks; in the user's app, opens your own window there) · unlane (put it back) · \
 REF can also be an outline line's head: button \"Save\", field[2]";
 
 /// Finds the ref a locator names, in the window the step will run on.

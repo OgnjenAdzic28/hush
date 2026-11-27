@@ -83,7 +83,7 @@ When several match, add which one: `button[2] "OK"`, or `field[1]` for an unname
 | `scroll REF up\|down\|left\|right [N]` | scroll a list or page |
 | `drag A to B` | refs or X,Y; dragging onto a ref takes its place in a list |
 | `wait REF`, `wait gone REF`, `wait text "T"` | wait for something to appear or go (default 5 s; add `within 30s` for longer) |
-| `lane`, `unlane` | move the window off screen, where it still renders and takes input; put it back |
+| `lane`, `unlane` | move the window off screen, where it still renders and takes input; put it back. In an app the user is using, `lane` opens your own window of it there instead, and the steps after it run in that window |
 
 ## The other commands
 

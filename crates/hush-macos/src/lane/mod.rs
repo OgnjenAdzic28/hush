@@ -19,6 +19,7 @@
 
 mod display;
 mod guard;
+mod own;
 mod place;
 
 use std::sync::{Mutex, MutexGuard};
@@ -32,22 +33,26 @@ use objc2_core_foundation::CGPoint;
 
 use crate::ax::Element;
 use crate::{act, apps, private};
+pub(crate) use own::{check_keyboard, give_own, holds};
 use place::{inside, onto, position, set_position, within};
 
 /// How long macOS may take to bring the display online, move it, or show a
 /// window there. Measured: about 1 s for the display, under 100 ms for a move.
-const LIMIT: Duration = Duration::from_secs(3);
+pub(super) const LIMIT: Duration = Duration::from_secs(3);
 const POLL: Duration = Duration::from_millis(10);
 
 #[derive(Clone)]
-struct Parked {
+pub(super) struct Parked {
     pid: i32,
     window: Element,
     /// Where it goes back to.
     from: CGPoint,
+    /// Opened for an agent in an app the user is using (see `own`): it
+    /// stays here when the user switches to its app.
+    own: bool,
 }
 
-struct Lane {
+pub(super) struct Lane {
     /// Holding it keeps the display alive; `None` when another Hush process
     /// (the daemon, an MCP server) owns the lane this one reuses.
     _display: Option<Retained<AnyObject>>,
@@ -101,6 +106,7 @@ pub(crate) fn park(
                     pid,
                     window: window.clone(),
                     from,
+                    own: false,
                 });
             }
         }
@@ -153,8 +159,8 @@ pub(crate) fn restore(pid: i32, window: &Element) -> Result<()> {
     evict(std::slice::from_ref(window), bounds)
 }
 
-/// The user switched to `pid`, so its windows in the lane come back and the
-/// app stays shown. Called on an observer thread, once by NSWorkspace and
+/// The user switched to `pid`, so its windows in the lane come back, except
+/// the agents' own (see `own`), and the app stays shown. Called on an observer thread, once by NSWorkspace and
 /// once by the app's own observer when Hush watches it; the moving happens
 /// on another thread, once, since it waits on the app.
 pub(crate) fn user_switched_to(pid: i32) {
@@ -178,8 +184,7 @@ pub(crate) fn user_switched_to(pid: i32) {
             {
                 lane.hidden.retain(|&hidden| hidden != pid);
             }
-            let _ = send_back(|p| p.pid == pid);
-            let _ = evict(&Element::application(pid).elements("AXWindows"), bounds);
+            own::user_switched_to(pid, bounds);
         }
         lock(&SWITCHING).retain(|&other| other != pid);
     });
@@ -238,7 +243,7 @@ pub(crate) fn release() {
 
 /// Moves the picked parked windows back, forgets the ones that left the
 /// lane, and hides again each hidden app whose windows are all back.
-fn send_back(pick: impl Fn(&Parked) -> bool) -> Result<()> {
+pub(super) fn send_back(pick: impl Fn(&Parked) -> bool) -> Result<()> {
     let (going, bounds) = match state()?.as_ref() {
         Some(lane) => (
             lane.parked
@@ -290,7 +295,7 @@ fn send_back(pick: impl Fn(&Parked) -> bool) -> Result<()> {
 }
 
 /// Moves whichever of `windows` are in the lane onto the main display.
-fn evict(windows: &[Element], bounds: Rect) -> Result<()> {
+pub(super) fn evict(windows: &[Element], bounds: Rect) -> Result<()> {
     let main = display::main();
     let stuck: Vec<&Element> = windows.iter().filter(|w| inside(w, bounds)).collect();
     for window in &stuck {
@@ -307,7 +312,7 @@ fn evict(windows: &[Element], bounds: Rect) -> Result<()> {
 
 /// The lane's frame in global screen coordinates (top-left origin), made
 /// on first use.
-fn bounds() -> Result<Rect> {
+pub(super) fn bounds() -> Result<Rect> {
     let mut lane = state()?;
     if let Some(lane) = lane.as_ref() {
         return Ok(lane.bounds);
@@ -334,7 +339,7 @@ fn bounds() -> Result<Rect> {
 
 /// The lane's frame when this or another Hush process made it, without
 /// making one.
-fn in_use() -> Option<Rect> {
+pub(super) fn in_use() -> Option<Rect> {
     let made = state().ok()?.as_ref().map(|lane| lane.bounds);
     made.or_else(|| display::existing().map(display::frame))
 }
@@ -345,11 +350,11 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn state() -> Result<MutexGuard<'static, Option<Lane>>> {
+pub(super) fn state() -> Result<MutexGuard<'static, Option<Lane>>> {
     LANE.lock().map_err(|_| Error::Failed("lane lock".into()))
 }
 
-fn wait(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+pub(super) fn wait(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + limit;
     while !done() {
         if Instant::now() >= deadline {

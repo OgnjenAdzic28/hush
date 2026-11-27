@@ -259,6 +259,9 @@ impl Platform for Fake {
                     world.second = Some(String::new());
                 }
             }
+            Op::Lane if self.world.borrow().opens_on_cmd_n => {
+                self.world.borrow_mut().second = Some(String::new());
+            }
             Op::Type { text, .. } => {
                 let mut world = self.world.borrow_mut();
                 match (window.id, &mut world.second) {
@@ -844,4 +847,24 @@ fn a_recording_the_agent_started_stays_on_its_window() {
         .filter(|op| op.starts_with("Record"))
         .collect();
     assert_eq!(records, ["RecordStart(7)", "RecordStop(7)"]);
+}
+
+#[test]
+fn a_lane_that_gives_the_agent_its_own_window_moves_the_batch_there() {
+    let mut engine = Engine::new(Fake::new());
+    engine.platform().world.borrow_mut().opens_on_cmd_n = true;
+    let report = engine
+        .act(
+            "Editor",
+            Some("Doc"),
+            &steps(&["lane", "type field \"Name\" \"Q4\""]),
+        )
+        .unwrap();
+    assert!(
+        report.contains("# step 1 opened window \"Doc 2\"; the steps after it ran there"),
+        "{report}"
+    );
+    let world = engine.platform().world.borrow();
+    assert_eq!(world.second.as_deref(), Some("Q4"));
+    assert_eq!(world.name, "", "the user's window wasn't typed into");
 }

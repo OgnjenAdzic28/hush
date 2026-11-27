@@ -51,6 +51,29 @@ pub fn render(app: &str, entries: &[MenuEntry]) -> String {
     out
 }
 
+/// The item that opens another ordinary window of the app, the way the
+/// user would get a second Finder or browser window: an enabled "New Window"
+/// or "New <Something> Window" item, or an item inside such a submenu
+/// (Terminal's profiles). Private and incognito windows don't share the
+/// user's state, and "New" alone makes a new document, so neither counts.
+/// The one on Cmd+N wins, then the shortest path.
+pub fn new_window(entries: &[MenuEntry]) -> Option<&MenuEntry> {
+    let opens_window = |title: &str| {
+        let lower = title.to_lowercase();
+        let words: Vec<&str> = lower.split_whitespace().collect();
+        matches!(
+            words.as_slice(),
+            ["new", "window", ..] | ["new", _, "window", ..]
+        ) && !words
+            .iter()
+            .any(|word| matches!(*word, "private" | "incognito" | "tab"))
+    };
+    entries
+        .iter()
+        .filter(|entry| entry.enabled && entry.path.iter().skip(1).any(|t| opens_window(t)))
+        .min_by_key(|entry| (entry.shortcut.as_deref() != Some("cmd+n"), entry.path.len()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,5 +104,54 @@ mod tests {
                 "Clip: Split [cmd+k]"
             ]
         );
+    }
+
+    #[test]
+    fn the_new_window_item_is_found_in_the_usual_places() {
+        let safari = [
+            entry(&["File", "New Window"], Some("cmd+n"), true),
+            entry(&["File", "New Private Window"], Some("cmd+shift+n"), true),
+            entry(&["File", "New Tab"], Some("cmd+t"), true),
+        ];
+        assert_eq!(new_window(&safari).unwrap().path, ["File", "New Window"]);
+        let finder = [
+            entry(&["File", "New Folder"], Some("cmd+shift+n"), true),
+            entry(&["File", "New Finder Window"], Some("cmd+n"), true),
+        ];
+        assert_eq!(
+            new_window(&finder).unwrap().path,
+            ["File", "New Finder Window"]
+        );
+        let terminal = [
+            entry(&["Shell", "New Window", "Basic"], None, true),
+            entry(
+                &["Shell", "New Window", "New Window with Settings – Stable"],
+                None,
+                true,
+            ),
+            entry(
+                &["Shell", "New Window", "New Window with Profile – Basic"],
+                Some("cmd+n"),
+                true,
+            ),
+        ];
+        assert_eq!(
+            new_window(&terminal).unwrap().path,
+            ["Shell", "New Window", "New Window with Profile – Basic"]
+        );
+    }
+
+    #[test]
+    fn a_new_document_private_window_or_disabled_item_is_not_one() {
+        let textedit = [entry(&["File", "New"], Some("cmd+n"), true)];
+        assert!(new_window(&textedit).is_none());
+        let private = [
+            entry(&["File", "New Incognito Window"], Some("cmd+shift+n"), true),
+            entry(&["File", "New Window"], Some("cmd+n"), false),
+            entry(&["Window", "New Window"], None, true),
+        ];
+        assert_eq!(new_window(&private).unwrap().path, ["Window", "New Window"]);
+        // A top-level menu named that way isn't an item.
+        assert!(new_window(&[entry(&["New Window"], None, true)]).is_none());
     }
 }
