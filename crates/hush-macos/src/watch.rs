@@ -89,7 +89,7 @@ pub(crate) struct Watcher {
     /// Apps whose window observer was asked for. Registering one is a round
     /// trip to the app that blocks for the messaging timeout when the app
     /// is busy, so it happens on the registrar thread, never in a call.
-    window_watched: Mutex<HashSet<i32>>,
+    window_watched: Arc<Mutex<HashSet<i32>>>,
     registrar: mpsc::Sender<i32>,
 }
 
@@ -126,13 +126,21 @@ impl Watcher {
             handle.thread().clone(),
             Arc::clone(&created),
         );
+        let window_watched: Arc<Mutex<HashSet<i32>>> = Arc::default();
+        {
+            // Apps launched from now on are watched from the start, so a
+            // window one reopens in the lane is caught (see `workspace`).
+            let watched = Arc::clone(&window_watched);
+            let registrar = registrar.clone();
+            crate::workspace::observe(move |pid| watch_windows(&watched, &registrar, pid));
+        }
         Watcher {
             counts: Arc::default(),
             created,
             run_loop,
             thread: handle.thread().clone(),
             observers: Mutex::default(),
-            window_watched: Mutex::default(),
+            window_watched,
             registrar,
         }
     }
@@ -169,17 +177,9 @@ impl Watcher {
         observers.insert(pid, Kept(observer));
     }
 
-    /// Starts keeping the windows `pid` creates, if it isn't yet.
     /// Starts keeping the windows `pid` creates, without waiting for it.
     pub(crate) fn watch_windows(&self, pid: i32) {
-        if self
-            .window_watched
-            .lock()
-            .expect("watched lock")
-            .insert(pid)
-        {
-            let _ = self.registrar.send(pid);
-        }
+        watch_windows(&self.window_watched, &self.registrar, pid);
     }
 
     /// The windows `pid` created since the last call.
@@ -207,6 +207,12 @@ impl Watcher {
         counter: Counter,
     ) -> Option<CFRetained<AXObserver>> {
         observe(&self.run_loop, &self.thread, pid, notifications, counter)
+    }
+}
+
+fn watch_windows(watched: &Mutex<HashSet<i32>>, registrar: &mpsc::Sender<i32>, pid: i32) {
+    if watched.lock().expect("watched lock").insert(pid) {
+        let _ = registrar.send(pid);
     }
 }
 
@@ -293,7 +299,9 @@ unsafe extern "C-unwind" fn callback(
                 // The element is the app; its windows are on screen now.
                 Element::from_raw(element).elements("AXWindows")
             } else {
-                vec![Element::from_raw(element)]
+                let window = Element::from_raw(element);
+                crate::lane::window_opened(*pid, &window);
+                vec![window]
             };
             if let Ok(mut created) = created.lock() {
                 let windows = created.entry(*pid).or_default();

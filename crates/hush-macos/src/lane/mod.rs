@@ -18,6 +18,7 @@
 //! The display lives as long as the process that made it (see `display`).
 
 mod display;
+mod place;
 
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
@@ -26,10 +27,11 @@ use std::time::{Duration, Instant};
 use hush_core::{Error, Rect, Result};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2_core_foundation::{CFRetained, CGPoint};
+use objc2_core_foundation::CGPoint;
 
 use crate::ax::Element;
-use crate::{act, apps, cf, private};
+use crate::{act, apps, private};
+use place::{inside, onto, position, set_position, within};
 
 /// How long macOS may take to bring the display online, move it, or show a
 /// window there. Measured: about 1 s for the display, under 100 ms for a move.
@@ -151,26 +153,58 @@ pub(crate) fn restore(pid: i32, window: &Element) -> Result<()> {
 }
 
 /// The user switched to `pid`, so its windows in the lane come back and the
-/// app stays shown. Called on the observer thread; the moving happens on
-/// another, since it waits on the app.
+/// app stays shown. Called on an observer thread, once by NSWorkspace and
+/// once by the app's own observer when Hush watches it; the moving happens
+/// on another thread, once, since it waits on the app.
 pub(crate) fn user_switched_to(pid: i32) {
     let Some(bounds) = in_use() else { return };
+    {
+        let mut switching = lock(&SWITCHING);
+        if switching.contains(&pid) {
+            return;
+        }
+        switching.push(pid);
+    }
     thread::spawn(move || {
         // Hush's own synthetic focus (`private::SyntheticFocus`) makes an
         // app believe it is active without the window server putting it in
         // front; only a real switch puts it there. Not the front window:
         // `to_top` raises lane windows above the user's. The deadline covers
         // the window server catching up after the app hears it is active.
-        if !wait(SWITCH, || private::front_pid() == Some(pid)) {
-            return;
+        if wait(SWITCH, || private::front_pid() == Some(pid)) {
+            if let Ok(mut lane) = state()
+                && let Some(lane) = lane.as_mut()
+            {
+                lane.hidden.retain(|&hidden| hidden != pid);
+            }
+            let _ = send_back(|p| p.pid == pid);
+            let _ = evict(&Element::application(pid).elements("AXWindows"), bounds);
         }
-        if let Ok(mut lane) = state()
-            && let Some(lane) = lane.as_mut()
-        {
-            lane.hidden.retain(|&hidden| hidden != pid);
+        lock(&SWITCHING).retain(|&other| other != pid);
+    });
+}
+
+/// Apps whose switch is being handled.
+static SWITCHING: Mutex<Vec<i32>> = Mutex::new(Vec::new());
+
+/// `pid` opened `window`. One that opens in the lane while its app is the
+/// user's front app and has no window parked there is the user's: an app
+/// they reopened put it back where it was when they quit, which was here.
+/// It moves to the main display. Called on the observer thread.
+pub(crate) fn window_opened(pid: i32, window: &Element) {
+    let Some(bounds) = in_use() else { return };
+    let window = window.clone();
+    thread::spawn(move || {
+        let agents = state()
+            .ok()
+            .and_then(|lane| {
+                lane.as_ref()
+                    .map(|lane| lane.parked.iter().any(|p| p.pid == pid))
+            })
+            .unwrap_or(false);
+        if !agents && private::front_pid() == Some(pid) && inside(&window, bounds) {
+            let _ = evict(std::slice::from_ref(&window), bounds);
         }
-        let _ = send_back(|p| p.pid == pid);
-        let _ = evict(&Element::application(pid).elements("AXWindows"), bounds);
     });
 }
 
@@ -270,16 +304,6 @@ fn evict(windows: &[Element], bounds: Rect) -> Result<()> {
     }
 }
 
-/// The same place on `main` as `at` has in the lane, kept clear of the menu
-/// bar and far enough from the edges that the window can be grabbed.
-fn onto(at: CGPoint, lane: Rect, main: Rect) -> CGPoint {
-    let keep = |offset: f64, low: f64, size: f64| offset.clamp(low, (size - 200.0).max(low));
-    CGPoint {
-        x: main.x + keep(at.x - lane.x, 0.0, main.w),
-        y: main.y + keep(at.y - lane.y, 40.0, main.h),
-    }
-}
-
 /// The lane's frame in global screen coordinates (top-left origin), made
 /// on first use.
 fn bounds() -> Result<Rect> {
@@ -310,16 +334,14 @@ fn in_use() -> Option<Rect> {
     made.or_else(|| display::existing().map(display::frame))
 }
 
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 fn state() -> Result<MutexGuard<'static, Option<Lane>>> {
     LANE.lock().map_err(|_| Error::Failed("lane lock".into()))
-}
-
-fn within(at: CGPoint, bounds: Rect) -> bool {
-    at.x >= bounds.x && at.y >= bounds.y && at.x < bounds.x + bounds.w && at.y < bounds.y + bounds.h
-}
-
-fn inside(window: &Element, bounds: Rect) -> bool {
-    position(window).is_some_and(|at| within(at, bounds))
 }
 
 fn wait(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
@@ -331,74 +353,4 @@ fn wait(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
         thread::sleep(POLL);
     }
     true
-}
-
-fn set_position(window: &Element, at: CGPoint) -> Result<()> {
-    // SAFETY: AXValueCreate copies the point.
-    let value = unsafe {
-        objc2_application_services::AXValue::new(
-            objc2_application_services::AXValueType::CGPoint,
-            std::ptr::NonNull::from(&at).cast(),
-        )
-    }
-    .ok_or_else(|| Error::Failed("couldn't build a position".into()))?;
-    let value: CFRetained<objc2_core_foundation::CFType> = value.into();
-    act::set(window, "AXPosition", &value)
-}
-
-fn position(window: &Element) -> Option<CGPoint> {
-    window.value("AXPosition").ok().and_then(|v| cf::point(&v))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const LANE: Rect = Rect {
-        x: 1512.0,
-        y: 982.0,
-        w: 1920.0,
-        h: 1080.0,
-    };
-    const MAIN: Rect = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: 1512.0,
-        h: 982.0,
-    };
-
-    #[test]
-    fn a_window_with_no_place_of_its_own_lands_where_it_was_in_the_lane() {
-        let at = onto(
-            CGPoint {
-                x: 1612.0,
-                y: 1082.0,
-            },
-            LANE,
-            MAIN,
-        );
-        assert_eq!((at.x, at.y), (100.0, 100.0));
-    }
-
-    #[test]
-    fn it_lands_clear_of_the_menu_bar_and_inside_the_main_display() {
-        let top = onto(
-            CGPoint {
-                x: 1512.0,
-                y: 982.0,
-            },
-            LANE,
-            MAIN,
-        );
-        assert_eq!((top.x, top.y), (0.0, 40.0));
-        let far = onto(
-            CGPoint {
-                x: 3400.0,
-                y: 2000.0,
-            },
-            LANE,
-            MAIN,
-        );
-        assert_eq!((far.x, far.y), (1312.0, 782.0));
-    }
 }

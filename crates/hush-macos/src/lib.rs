@@ -47,6 +47,8 @@ mod vision;
 mod watch;
 #[cfg(target_os = "macos")]
 mod windows;
+#[cfg(target_os = "macos")]
+mod workspace;
 
 #[cfg(target_os = "macos")]
 pub use ax::Element;
@@ -64,10 +66,17 @@ pub fn release_lane() {
     lane::release();
 }
 
-/// Gives the calling (main) thread to the main dispatch queue for good. A
-/// process serving sessions on other threads calls this, so work that must
-/// happen on the main thread (AppleScript) runs there.
+/// Gives the calling (main) thread to its run loop for good. A process
+/// serving sessions on other threads calls this, so work that must happen on
+/// the main thread (AppleScript) runs there, and NSWorkspace, which posts on
+/// the main run loop only, reports app launches and switches (see
+/// `workspace`). The main run loop also drains the main dispatch queue.
 #[cfg(target_os = "macos")]
 pub fn serve_main_thread() -> ! {
-    dispatch2::dispatch_main()
+    loop {
+        // SAFETY: the default mode constant is always set.
+        let mode = unsafe { objc2_core_foundation::kCFRunLoopDefaultMode };
+        // The main queue keeps the main run loop from finishing when idle.
+        objc2_core_foundation::CFRunLoop::run_in_mode(mode, 1e10, false);
+    }
 }
