@@ -60,8 +60,8 @@ pub(super) fn create() -> Result<(Retained<AnyObject>, u32)> {
         let allocated: *mut AnyObject = msg_send![mode_class, alloc];
         let mode: Option<Retained<AnyObject>> = Retained::from_raw(msg_send![
             allocated,
-            initWithWidth: WIDTH as usize,
-            height: HEIGHT as usize,
+            initWithWidth: WIDTH,
+            height: HEIGHT,
             refreshRate: 60.0_f64
         ]);
         let mode = mode.ok_or_else(|| Error::Failed("couldn't describe the lane's mode".into()))?;
