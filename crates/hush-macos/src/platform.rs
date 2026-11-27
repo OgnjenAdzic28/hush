@@ -281,6 +281,14 @@ impl Platform for MacPlatform {
             if matches!(op, Op::Unlane) {
                 return crate::lane::restore(pid, &element);
             }
+            // One of the user's apps showing on their screen: the agent gets
+            // a window of its own instead of theirs (see `lane::own`).
+            if crate::workspace::is_users(pid)
+                && !apps::is_hidden(pid)
+                && !crate::lane::holds(&element)
+            {
+                return crate::lane::give_own(pid, &app.name);
+            }
             return crate::lane::park(pid, &element, || {
                 let listed = self.windows(app)?;
                 let cache = lock(&self.windows);
@@ -291,6 +299,9 @@ impl Platform for MacPlatform {
             });
         }
         let window_element = self.window_element(app, window)?;
+        if needs_key_window(&op) {
+            crate::lane::check_keyboard(app, &window_element)?;
+        }
         let target = act::Target {
             app,
             window,
@@ -345,6 +356,7 @@ impl Platform for MacPlatform {
 
     fn play(&self, app: &AppInfo, window: &WindowInfo, events: &[Timed]) -> Result<Played> {
         let window_element = self.window_element(app, window)?;
+        crate::lane::check_keyboard(app, &window_element)?;
         let target = act::Target {
             app,
             window,
@@ -397,3 +409,18 @@ const _: () = {
     const fn shared<T: Send + Sync>() {}
     shared::<MacPlatform>();
 };
+
+/// Steps that reach a window through the app's key window: AppKit hands
+/// keys, pointer input and menu commands of the active app to it. The rest
+/// are Accessibility actions on one element.
+fn needs_key_window<H>(op: &Op<'_, H>) -> bool {
+    matches!(
+        op,
+        Op::Type { .. }
+            | Op::Key { .. }
+            | Op::Menu(_)
+            | Op::Click { .. }
+            | Op::Scroll { .. }
+            | Op::Focus(_)
+    )
+}

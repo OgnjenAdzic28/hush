@@ -152,9 +152,18 @@ Ten sessions hammering one host: 500 calls in 2.2 s, zero errors, observe in 48 
 ## The lane
 
 Agents don't need your screen. The `lane` step moves a window onto Hush's lane, a virtual display
-nobody can see, parked off a corner of your main display where the pointer can't reach. Windows
-there still render, take clicks and keys, and can be captured. Only that window moves, and it comes
-back to where it was on `unlane`, the moment you switch to its app, or when the host exits.
+nobody can see, parked off a corner of your displays. If your pointer slips through that corner,
+Hush puts it straight back, so you never end up on a screen you can't see. Windows there still
+render, take clicks and keys, and can be captured. Only that window moves, and it comes back to
+where it was on `unlane`, the moment you switch to its app, or when the host exits. A window an
+app reopens on the lane after you quit it comes back to your screen too.
+
+In an app you're using, the agent doesn't take your window. `lane` opens another one, the way File >
+New Window would, and parks that. It's the same app on the same data, so the agent's work shows up
+in your window, and it stays on the lane when you switch to the app. While you're in the app, its
+keyboard and pointer stay yours: the agent keeps working through Accessibility actions, and steps
+that need keys or clicks wait until you switch away. An app with no New Window item is refused
+rather than taken.
 
 On Linux the lane is a hidden X server that Hush starts for itself. Every app an agent opens runs
 there from the start, whether your desktop is X11 or Wayland.

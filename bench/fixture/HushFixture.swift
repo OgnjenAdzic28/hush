@@ -42,6 +42,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
     let testMenu = NSMenu(title: "Test"); testItem.submenu = testMenu
     testMenu.addItem(withTitle: "Mark", action: #selector(mark), keyEquivalent: "k").target = self
     testMenu.addItem(withTitle: "Reset", action: #selector(reset), keyEquivalent: "").target = self
+    testMenu.addItem(withTitle: "New Window", action: #selector(newWindow), keyEquivalent: "n").target = self
     NSApp.mainMenu = menu
     window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 480, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
     window.title = "Hush Fixture"
@@ -80,6 +81,19 @@ final class Delegate: NSObject, NSApplicationDelegate, NSTextFieldDelegate {
   @objc func mark() { log("menu mark") }
   @objc func laterPressed() { log("later pressed") }
   @objc func reset() { log("menu reset") }
+  // Another window, the way File > New Window opens one: the app's main
+  // window from now on. Behind everything, like the others, so the test
+  // never covers the user's windows.
+  var copies: [NSWindow] = []
+  @objc func newWindow() {
+    let copy = NSWindow(contentRect: NSRect(x: 240, y: 240, width: 320, height: 160), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+    copy.title = "Agent Copy"; copy.isReleasedWhenClosed = false
+    let button = NSButton(title: "Copy button", target: self, action: #selector(copyPressed)); button.frame = NSRect(x: 20, y: 60, width: 160, height: 30)
+    copy.contentView!.addSubview(button)
+    copy.orderBack(nil); copy.makeMain(); copies.append(copy)
+    log("new window")
+  }
+  @objc func copyPressed() { log("copy pressed") }
   func controlTextDidChange(_ n: Notification) { log("field \(field.stringValue)") }
   func controlTextDidEndEditing(_ n: Notification) { log("field end \(field.stringValue)") }
   // Hush's synthetic focus makes the app believe it is active for one step;

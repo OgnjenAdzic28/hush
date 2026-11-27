@@ -84,11 +84,14 @@ impl<P: Platform> Engine<P> {
         }
         // Unless the caller named a window, a step that opens one (cmd+n,
         // File > New, a button that opens a dialog) takes the rest of the
-        // batch with it, so `type` lands where the agent expects.
-        let mut known = match window_title {
-            None => Some(self.window_ids(&app)),
-            Some(_) => None,
-        };
+        // batch with it, so `type` lands where the agent expects. `lane`
+        // always does: in an app the user is using, it opens the agent a
+        // window of its own instead of taking the user's.
+        let follows = |step: &Step| window_title.is_none() || matches!(step, Step::Lane);
+        let mut known = checked
+            .iter()
+            .any(|(step, _)| follows(step))
+            .then(|| self.window_ids(&app));
         let mut moved = None;
 
         let started = Instant::now();
@@ -120,7 +123,7 @@ impl<P: Platform> Engine<P> {
                         .note(&app.name, window_title, &step, &before, after);
                     let opened = match (&mut known, &step) {
                         (Some(known), step) if !matches!(step, Step::Wait { .. }) => {
-                            self.opened(&app, known)
+                            self.opened(&app, known).filter(|_| follows(step))
                         }
                         _ => None,
                     };

@@ -408,3 +408,70 @@ fn lane_makes_a_background_app_fully_usable() {
     assert!(!log.contains("ACTIVATED"), "the fixture was activated");
     assert_eq!(front(&engine), user_app, "the user's front app changed");
 }
+
+#[test]
+#[ignore = "opens a fixture window on the lane; needs the owner's go-ahead"]
+fn an_agent_gets_its_own_window_of_the_users_app() {
+    // Running before Hush starts, the fixture is one of the user's apps.
+    let fixture = launch_as_user();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !std::fs::read_to_string(&fixture.log)
+        .unwrap_or_default()
+        .contains("later window")
+    {
+        assert!(Instant::now() < deadline, "the fixture must open");
+        // Polls the fixture's log while it starts, in about a second.
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let mut engine = Engine::new(MacPlatform::new().expect("Accessibility permission"));
+    let (app, before) = both_windows(&engine);
+    let report = engine
+        .act("HushFixture", Some("Hush Fixture"), &["lane".into()])
+        .unwrap();
+    assert!(
+        report.contains("opened window \"Agent Copy\""),
+        "the agent works in a window of its own:\n{report}"
+    );
+    let now = engine.platform().windows(&app).unwrap();
+    assert_same_frames(&now, &before);
+    let copy = now.iter().find(|w| w.title == "Agent Copy").unwrap();
+    assert!(off_main(copy.frame), "its window is in the lane");
+
+    let outline = engine
+        .observe(
+            "HushFixture",
+            ObserveOptions {
+                window: Some("Agent Copy"),
+                full: true,
+                ..ObserveOptions::default()
+            },
+        )
+        .unwrap();
+    let press = format!("click {}", reference(&outline, "Copy button"));
+    let report = engine
+        .act("HushFixture", Some("Agent Copy"), &[press])
+        .unwrap();
+    assert!(!report.contains("stopped"), "{report}");
+
+    // Asked again, it gets the same window back, not a second one.
+    let report = engine
+        .act("HushFixture", Some("Hush Fixture"), &["lane".into()])
+        .unwrap();
+    assert!(report.contains("already in the lane"), "{report}");
+
+    let report = engine
+        .act("HushFixture", Some("Agent Copy"), &["unlane".into()])
+        .unwrap();
+    assert!(!report.contains("stopped"), "{report}");
+    let now = engine.platform().windows(&app).unwrap();
+    let copy = now.iter().find(|w| w.title == "Agent Copy").unwrap();
+    assert!(!off_main(copy.frame), "unlane shows it to the user");
+    assert_same_frames(&now, &before);
+
+    let log = std::fs::read_to_string(&fixture.log).unwrap_or_default();
+    assert!(log.contains("copy pressed"), "the press landed:\n{log}");
+    assert!(
+        !log.contains("ACTIVATED"),
+        "the fixture was activated:\n{log}"
+    );
+}
