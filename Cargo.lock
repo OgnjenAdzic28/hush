@@ -409,7 +409,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hush"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "hush-core",
  "hush-engine",
@@ -422,18 +422,18 @@ dependencies = [
 
 [[package]]
 name = "hush-core"
-version = "0.3.0"
+version = "0.4.0"
 
 [[package]]
 name = "hush-engine"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "hush-core",
 ]
 
 [[package]]
 name = "hush-linux"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "ab_glyph",
  "futures-util",
@@ -449,7 +449,7 @@ dependencies = [
 
 [[package]]
 name = "hush-macos"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "block2",
  "dispatch2",
@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "hush-mcp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "hush-core",
  "hush-engine",
