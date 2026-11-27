@@ -18,6 +18,7 @@
 //! The display lives as long as the process that made it (see `display`).
 
 mod display;
+mod guard;
 mod place;
 
 use std::sync::{Mutex, MutexGuard};
@@ -315,7 +316,11 @@ fn bounds() -> Result<Rect> {
         Some(id) => (None, display::frame(id)),
         None => {
             let (display, id) = display::create()?;
-            (Some(display), display::place(id)?)
+            let bounds = display::place(id)?;
+            // The process that made the display guards it, for as long as
+            // the display lives.
+            guard::start(id);
+            (Some(display), bounds)
         }
     };
     *lane = Some(Lane {

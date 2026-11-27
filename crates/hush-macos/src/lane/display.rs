@@ -134,7 +134,7 @@ fn corner(screens: &[Rect], w: f64, h: f64) -> (f64, f64) {
     corners.into_iter().find(alone).unwrap_or((right, bottom))
 }
 
-fn active() -> Vec<u32> {
+pub(super) fn active() -> Vec<u32> {
     let mut ids = [0u32; 16];
     let mut count = 0u32;
     // SAFETY: the buffer holds 16 ids and `count` is a valid out-pointer.
