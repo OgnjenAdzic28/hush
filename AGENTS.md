@@ -27,6 +27,9 @@ Crates appear as they are built; the table is the plan they follow.
   platform (`hush-macos/src/private.rs`), resolved at runtime, failing closed when missing.
 - Never disturb the user: no activation, raise, focus switch, pointer warp, clipboard use or
   global event posting. Events go to the target process only. If a route can't do that, fail.
+  The one exception: the lane guard (`hush-macos/src/lane/guard.rs`) puts the user's pointer back
+  on their own screens when it slips onto the lane display, so they never land on a screen they
+  can't see.
 - No fixed sleeps. Wait on an observable condition (an accessibility event, a value read-back)
   with a deadline. A sleep that remains needs a comment saying what it waits for and the
   measurement behind its length.
